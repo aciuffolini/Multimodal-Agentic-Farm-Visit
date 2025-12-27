@@ -44,8 +44,7 @@ jobs:
           NODE_ENV: production
           VITE_BASE_PATH: /Multimodal-Agentic-Farm-Visit/
         run: |
-          echo "Building with Base Path: $VITE_BASE_PATH"
-          pnpm run build --filter @farm-visit/web
+          pnpm run build --filter @farm-visit/web -- --base=/Multimodal-Agentic-Farm-Visit/
 
       - name: Verify build
         run: |
