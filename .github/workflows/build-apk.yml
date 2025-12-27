@@ -1,0 +1,370 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.8-fix)'
+        required: false
+        default: 'v1.0.8-fix'
+  push:
+    tags:
+      - 'v*'
+      - 'v*-fix'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Diagnostic - Initial environment
+        run: |
+          echo "=== INITIAL ENVIRONMENT ==="
+          echo "OS: $(uname -a)"
+          echo "Working directory: $(pwd)"
+          echo "Available disk space:"
+          df -h
+          echo "=========================="
+      
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Diagnostic - Repository structure
+        run: |
+          echo "=== REPOSITORY STRUCTURE ==="
+          echo "Top-level files:"
+          ls -la | head -20
+          echo ""
+          echo "Checking key directories:"
+          [ -d apps/web ] && echo "✓ apps/web exists" || echo "✗ apps/web missing"
+          [ -d packages/shared ] && echo "✓ packages/shared exists" || echo "✗ packages/shared missing"
+          [ -d apps/web/android ] && echo "✓ apps/web/android exists" || echo "✗ apps/web/android missing"
+          echo "============================"
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Diagnostic - Node.js verification
+        run: |
+          echo "=== NODE.JS VERIFICATION ==="
+          node --version
+          npm --version
+          which node
+          which npm
+          echo "============================"
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      
+      - name: Diagnostic - Java verification
+        run: |
+          echo "=== JAVA VERIFICATION ==="
+          java -version
+          javac -version
+          echo "JAVA_HOME: $JAVA_HOME"
+          which java
+          which javac
+          echo "========================"
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Diagnostic - Android SDK verification
+        run: |
+          echo "=== ANDROID SDK VERIFICATION ==="
+          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          [ -d "$ANDROID_SDK_ROOT" ] && echo "✓ SDK directory exists" || echo "✗ SDK directory missing"
+          echo "==============================="
+      
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/web/node_modules
+            packages/shared/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      
+      - name: Install root dependencies
+        run: |
+          echo "=== INSTALLING ROOT DEPENDENCIES ==="
+          npm install --legacy-peer-deps 2>&1 | tee root-install.log || {
+            echo "❌ Root install failed"
+            echo "=== INSTALL ERROR LOG ==="
+            tail -100 root-install.log
+            echo "========================"
+            exit 1
+          }
+          echo "✅ Root dependencies installed"
+          npm list --depth=0 2>&1 | head -20 || echo "⚠️ Some dependencies may have warnings"
+          echo "================================"
+      
+      - name: Build shared package
+        run: |
+          echo "=== BUILDING SHARED PACKAGE ==="
+          cd packages/shared
+          echo "Current directory: $(pwd)"
+          
+          echo "Installing dependencies..."
+          npm install --legacy-peer-deps 2>&1 | tee ../shared-install.log || {
+            echo "❌ Shared install failed"
+            tail -50 ../shared-install.log
+            exit 1
+          }
+          
+          echo "Running build..."
+          npm run build 2>&1 | tee ../shared-build.log || {
+            echo "❌ Shared build failed"
+            echo "=== BUILD ERROR LOG ==="
+            tail -100 ../shared-build.log
+            echo "======================"
+            exit 1
+          }
+          
+          echo "Verifying dist directory..."
+          if [ ! -d "dist" ]; then
+            echo "❌ dist directory not found!"
+            echo "Contents of packages/shared:"
+            ls -la
+            exit 1
+          fi
+          
+          echo "✅ Shared package built"
+          echo "Dist contents:"
+          ls -la dist/ | head -10
+          echo "=========================="
+      
+      - name: Build PWA (web app)
+        run: |
+          echo "=== BUILDING PWA ==="
+          cd apps/web
+          echo "Current directory: $(pwd)"
+          
+          echo "Installing dependencies..."
+          npm install --legacy-peer-deps 2>&1 | tee ../web-install.log || {
+            echo "❌ Web install failed"
+            tail -50 ../web-install.log
+            exit 1
+          }
+          
+          echo "Running Android build (no service worker)..."
+          npm run build:android 2>&1 | tee ../web-build.log || {
+            echo "❌ PWA build failed"
+            echo "=== BUILD ERROR LOG ==="
+            tail -150 ../web-build.log
+            echo "======================"
+            exit 1
+          }
+          
+          echo "Verifying build output..."
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ dist/index.html not found!"
+            echo "Contents of apps/web:"
+            ls -la
+            echo "Contents of dist (if exists):"
+            [ -d dist ] && ls -la dist/ || echo "dist directory does not exist"
+            exit 1
+          fi
+          
+          echo "✅ PWA built"
+          echo "Dist contents:"
+          ls -la dist/ | head -20
+          echo "=================="
+      
+      - name: Install Capacitor CLI
+        run: |
+          echo "=== INSTALLING CAPACITOR CLI ==="
+          npm install -g @capacitor/cli@^6.0.2
+          npx cap --version || echo "⚠️ Cap version check failed"
+          echo "================================"
+      
+      - name: Sync Capacitor Android
+        run: |
+          echo "=== SYNCING CAPACITOR ==="
+          cd apps/web
+          npx cap sync android 2>&1 | tee ../cap-sync.log || {
+            echo "❌ Capacitor sync failed"
+            echo "=== SYNC ERROR LOG ==="
+            tail -100 ../cap-sync.log
+            echo "====================="
+            exit 1
+          }
+          
+          echo "Verifying Android directory..."
+          if [ ! -d "android" ]; then
+            echo "❌ Android directory not found after sync!"
+            exit 1
+          fi
+          
+          echo "✅ Capacitor sync completed"
+          echo "Checking Android assets..."
+          find android/app/src/main/assets -type f 2>/dev/null | head -5 || echo "No assets found (may be normal)"
+          echo "============================"
+      
+      - name: Setup Android environment
+        run: |
+          echo "=== SETTING UP ANDROID ENV ==="
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "PATH: $PATH"
+          echo "✅ Android environment configured"
+          echo "================================"
+      
+      - name: Accept Android licenses
+        run: |
+          echo "=== ACCEPTING ANDROID LICENSES ==="
+          yes | sdkmanager --licenses 2>&1 | head -20 || echo "⚠️ License acceptance may have failed, continuing..."
+          echo "=================================="
+        continue-on-error: true
+      
+      - name: Install required Android components
+        run: |
+          echo "=== INSTALLING ANDROID COMPONENTS ==="
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" 2>&1 | head -30 || echo "⚠️ Some SDK components may already be installed"
+          echo "====================================="
+        continue-on-error: true
+      
+      - name: Diagnostic - Gradle setup
+        run: |
+          echo "=== GRADLE SETUP VERIFICATION ==="
+          cd apps/web/android
+          echo "Current directory: $(pwd)"
+          [ -f gradlew ] && echo "✓ gradlew exists" || echo "✗ gradlew missing"
+          [ -f build.gradle ] && echo "✓ build.gradle exists" || echo "✗ build.gradle missing"
+          [ -f app/build.gradle ] && echo "✓ app/build.gradle exists" || echo "✗ app/build.gradle missing"
+          chmod +x gradlew
+          echo "Running gradlew --version..."
+          ./gradlew --version 2>&1 | head -20 || echo "⚠️ Gradle version check failed"
+          echo "================================"
+      
+      - name: Verify dependencies can be resolved
+        run: |
+          echo "=== VERIFYING DEPENDENCIES ==="
+          cd apps/web/android
+          echo "Attempting to resolve dependencies..."
+          ./gradlew dependencies --configuration debugRuntimeClasspath 2>&1 | head -50 || {
+            echo "⚠️ Dependency resolution had warnings, but continuing..."
+          }
+          echo "Checking ML Kit GenAI availability..."
+          ./gradlew dependencies --configuration debugRuntimeClasspath 2>&1 | grep -i "genai\|mlkit" || echo "⚠️ ML Kit dependency not found in dependency tree"
+          echo "================================="
+        continue-on-error: true
+      
+      - name: Build Android APK
+        run: |
+          echo "=== BUILDING ANDROID APK ==="
+          cd apps/web/android
+          chmod +x gradlew
+          chmod +x gradlew.bat || true
+          
+          echo "Cleaning previous builds..."
+          ./gradlew clean --no-daemon 2>&1 | tail -20 || echo "⚠️ Clean had warnings"
+          
+          echo "Starting Gradle build..."
+          ./gradlew assembleDebug --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log || {
+            echo "❌ Gradle build failed"
+            echo "=== BUILD ERROR LOG (last 300 lines) ==="
+            tail -300 build.log
+            echo "========================================"
+            echo "=== SEARCHING FOR ERRORS ==="
+            grep -i "error" build.log | tail -50 || echo "No 'error' found in log"
+            grep -i "failed" build.log | tail -50 || echo "No 'failed' found in log"
+            grep -i "could not resolve\|cannot find\|dependency" build.log | tail -30 || echo "No dependency errors found"
+            echo "============================"
+            exit 1
+          }
+          
+          echo "✅ APK build completed"
+          echo "========================="
+      
+      - name: Verify APK exists
+        run: |
+          echo "=== VERIFYING APK ==="
+          APK_PATH="apps/web/android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK_PATH" ]; then
+            echo "✅ APK found!"
+            ls -lh "$APK_PATH"
+            SIZE=$(stat -c%s "$APK_PATH" 2>/dev/null || echo "0")
+            echo "APK size: $SIZE bytes"
+            if [ "$SIZE" -lt 1000000 ]; then
+              echo "⚠️ APK seems too small ($SIZE bytes)"
+            else
+              echo "✅ APK size OK"
+            fi
+          else
+            echo "❌ APK not found at: $APK_PATH"
+            echo "Searching for APK files..."
+            find apps/web/android -name "*.apk" -type f || echo "No APK files found"
+            echo "Checking build outputs..."
+            ls -la apps/web/android/app/build/outputs/ 2>/dev/null || echo "No outputs directory"
+            exit 1
+          fi
+          echo "====================="
+      
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: farm-visit-apk
+          path: apps/web/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+      
+      - name: Get version from tag or input
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif startsWith("${{ github.ref }}", "refs/tags/"); then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="v1.0.8-fix"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+      
+      - name: Create or Update Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: Farm Visit App ${{ steps.get_version.outputs.version }}
+          files: apps/web/android/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true
+          body: |
+            🎉 Release ${{ steps.get_version.outputs.version }}
+            
+            ## 📱 Instalación Android
+            
+            1. Descargar APK desde abajo
+            2. Habilitar "Fuentes desconocidas" en Settings → Security
+            3. Instalar APK
+            4. Ingresar contraseña cuando se solicite
+            
+            ## ✨ Características
+            
+            - GPS, Cámara, Micrófono (con permisos completos)
+            - Extracción de datos con IA (Gemini Nano)
+            - Mapa KMZ/KML
+            - Offline-first PWA
+            - Multi-agente system (swarm)
+            - Chatbot mejorado con respuestas contextuales
+            
+            ## 📧 Contacto
+            
+            Para permisos y acceso: **aciuffolini@teknal.com.ar**
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,60 @@
+feat: v1.0.8 - Major improvements: Security, Diagnostics, Error Handling, UX
+
+🔒 Security Improvements
+- Implemented SHA-256 password hashing (no plain text storage)
+- Secure password validation with async hashing
+- Better authentication flow with loading states
+
+🔍 Diagnostic Tools & Error Handling
+- Comprehensive proxy error diagnostics (tests 10 conditions)
+- Server status checker (check-server.ps1)
+- Automatic server management scripts (stop-server.ps1, start-both.bat)
+- Context-aware error messages with actionable steps
+- Improved server connection error detection (503, 500, timeout, ECONNREFUSED)
+
+🐛 Bug Fixes
+- Fixed TypeScript syntax errors in test-server.js (removed :any annotations)
+- Improved server interface binding (explicit localhost)
+- Removed dead Gemini Nano mock code (150+ lines cleaned up)
+- Fixed proxy error suppression with better detection
+- Better error handling for all failure scenarios
+
+📱 UI/UX Improvements
+- Enhanced API key input with helpful links to OpenAI/Groq
+- Better placeholder text with examples and keyboard shortcuts
+- Improved tooltips on all interactive elements
+- Context-aware button states and messages
+- Better focus states and transitions
+- Clearer error message formatting with verification steps
+
+⚙️ Configuration & Developer Experience
+- GitHub Pages base path support (configurable via VITE_BASE_PATH)
+- Improved proxy error suppression
+- Comprehensive diagnostic scripts and documentation
+- Better developer tools for troubleshooting
+
+📊 Version Updates
+- Android versionCode: 108
+- Android versionName: 1.0.8
+- Updated all README links and badges
+- Updated changelog and release notes
+
+Files Changed:
+- apps/web/vite.config.ts - Base path, proxy improvements
+- apps/web/test-server.js - Fixed syntax, improved binding
+- apps/web/src/components/ChatDrawer.tsx - UI/UX improvements
+- apps/web/src/components/PasswordPrompt.tsx - Password hashing
+- apps/web/src/lib/config/password.ts - NEW - Password hashing utility
+- apps/web/src/lib/llm/GeminiNanoNative.web.ts - Simplified (removed mock)
+- apps/web/src/lib/llm/GeminiNano.ts - Cleaned up
+- apps/web/android/app/build.gradle - Version updated
+- README.md - Version, links, changelog updated
+- New diagnostic tools and server management scripts
+
+Breaking Changes: None (all improvements are backward compatible)
+
+
+
+
+
+

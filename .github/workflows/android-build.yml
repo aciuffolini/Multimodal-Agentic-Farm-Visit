@@ -1,0 +1,82 @@
+name: Android Debug Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "apps/web/android/**"
+    branches:
+      - main
+      - develop
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "apps/web/android/**"
+
+env:
+  DEFAULT_VITE_API_URL: https://api.example.com/chat
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.23.0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared workspace package
+        run: pnpm run build:shared
+
+      - name: Build web bundle for Android (Capacitor)
+        env:
+          PROD_API_URL: ${{ secrets.PROD_API_URL }}
+        run: |
+          export VITE_API_URL="${PROD_API_URL:-$DEFAULT_VITE_API_URL}"
+          pnpm --filter @farm-visit/web run build:android
+
+      - name: Sync Capacitor Android project
+        run: |
+          pnpm --filter @farm-visit/web exec cap sync android
+
+      - name: Build Android debug APK
+        run: |
+          cd apps/web/android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: farm-visit-android-debug
+          path: apps/web/android/app/build/outputs/apk/debug/*.apk
+
