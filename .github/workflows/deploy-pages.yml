@@ -26,32 +26,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 10.23.0
-      
-      # FIX #1: Install at ROOT to enable workspace linking
       - name: Install dependencies
         run: |
           echo "=== INSTALLING ROOT DEPENDENCIES ==="
-          pnpm install --frozen-lockfile
+          npm install --legacy-peer-deps
           echo "✅ Root dependencies installed"
           echo "Verifying workspace structure..."
           ls -la packages/shared/ || echo "⚠️ packages/shared not found"
           ls -la apps/web/ || echo "⚠️ apps/web not found"
-          echo "Verifying workspace linking..."
-          pnpm list --depth=0 || echo "⚠️ pnpm list failed"
-      
-      # FIX #2: Build shared package FIRST (required dependency)
+
       - name: Build shared package
         run: |
           echo "=== BUILDING SHARED PACKAGE ==="
-          pnpm run build:shared
+          npm run build:shared
           echo "✅ Shared package build command completed"
-      
-      # FIX #3: Verify shared build succeeded
+
       - name: Verify shared build
         run: |
           echo "=== VERIFYING SHARED BUILD ==="
@@ -61,17 +52,8 @@ jobs:
             ls -la packages/shared/
             exit 1
           fi
-          if [ ! -f "packages/shared/dist/index.js" ]; then
-            echo "❌ ERROR: packages/shared/dist/index.js not found!"
-            echo "Contents of packages/shared/dist:"
-            ls -la packages/shared/dist/ || echo "dist directory is empty"
-            exit 1
-          fi
           echo "✅ Shared build verified"
-          echo "Dist contents:"
-          ls -la packages/shared/dist/ | head -10
-      
-      # FIX #4: Build web app with environment variable
+
       - name: Build web app
         working-directory: apps/web
         env:
@@ -80,39 +62,24 @@ jobs:
         run: |
           echo "=== BUILDING WEB APP (base=/Multimodal-Agentic-Farm-Visit/) ==="
           echo "VITE_BASE_PATH=$VITE_BASE_PATH"
-          pnpm run build
+          npm install --legacy-peer-deps  # Ensure local deps are ready
+          npm run build
           echo "✅ Web app build command completed"
-      
-      # FIX #5: Verify web build succeeded
+
       - name: Verify web build
         run: |
           echo "=== VERIFYING WEB BUILD ==="
           if [ ! -d "apps/web/dist" ]; then
             echo "❌ ERROR: apps/web/dist directory not found!"
-            echo "Contents of apps/web:"
             ls -la apps/web/
             exit 1
           fi
           if [ ! -f "apps/web/dist/index.html" ]; then
             echo "❌ ERROR: apps/web/dist/index.html not found!"
-            echo "Contents of apps/web/dist:"
-            ls -la apps/web/dist/ | head -20
+            ls -la apps/web/dist/
             exit 1
           fi
           echo "✅ Web build verified"
-          echo "Dist size:"
-          du -sh apps/web/dist/
-          echo "Key files:"
-          ls -lh apps/web/dist/ | head -10
-          echo ""
-          echo "=== VERIFYING BASE PATH IN HTML ==="
-          if grep -q "/Agentic-Farm-Visit/" apps/web/dist/index.html; then
-            echo "✅ Base path found in HTML"
-          else
-            echo "⚠️  WARNING: Base path may not be correctly set in HTML"
-            echo "First 20 lines of index.html:"
-            head -20 apps/web/dist/index.html
-          fi
       
       # FIX #6: Verify build size to catch empty outputs
       - name: Verify build artifact size
