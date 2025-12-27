@@ -21,86 +21,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: |
-          echo "=== INSTALLING ROOT DEPENDENCIES ==="
-          npm install --legacy-peer-deps
-          echo "✅ Root dependencies installed"
-          echo "Verifying workspace structure..."
-          ls -la packages/shared/ || echo "⚠️ packages/shared not found"
-          ls -la apps/web/ || echo "⚠️ apps/web not found"
+        run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: |
-          echo "=== BUILDING SHARED PACKAGE ==="
-          cd packages/shared
-          npm install --legacy-peer-deps
-          npm run build
-          echo "✅ Shared package build command completed"
-
-      - name: Verify shared build
-        run: |
-          echo "=== VERIFYING SHARED BUILD ==="
-          if [ ! -d "packages/shared/dist" ]; then
-            echo "❌ ERROR: packages/shared/dist directory not found!"
-            echo "Contents of packages/shared:"
-            ls -la packages/shared/
-            exit 1
-          fi
-          echo "✅ Shared build verified"
+        run: pnpm run build --filter @farm-visit/shared
 
       - name: Build web app
-        working-directory: apps/web
         env:
           NODE_ENV: production
           VITE_BASE_PATH: /Multimodal-Agentic-Farm-Visit/
         run: |
-          echo "=== BUILDING WEB APP (base=/Multimodal-Agentic-Farm-Visit/) ==="
-          echo "VITE_BASE_PATH=$VITE_BASE_PATH"
-          npm install --legacy-peer-deps  # Ensure local deps are ready
-          npm run build
-          echo "✅ Web app build command completed"
+          echo "Building with Base Path: $VITE_BASE_PATH"
+          pnpm run build --filter @farm-visit/web
 
-      - name: Verify web build
+      - name: Verify build
         run: |
-          echo "=== VERIFYING WEB BUILD ==="
-          if [ ! -d "apps/web/dist" ]; then
-            echo "❌ ERROR: apps/web/dist directory not found!"
-            ls -la apps/web/
-            exit 1
-          fi
+          ls -la apps/web/dist
           if [ ! -f "apps/web/dist/index.html" ]; then
-            echo "❌ ERROR: apps/web/dist/index.html not found!"
-            ls -la apps/web/dist/
+            echo "Index.html MISSING!"
             exit 1
           fi
-          echo "✅ Web build verified"
-      
-      # FIX #6: Verify build size to catch empty outputs
-      - name: Verify build artifact size
-        run: |
-          echo "=== VERIFYING BUILD SIZE ==="
-          SIZE=$(du -sm apps/web/dist | cut -f1)
-          echo "Dist size: ${SIZE} MB"
-          if [ "$SIZE" -lt 1 ]; then
-            echo "⚠️  WARNING: Build size is very small ($SIZE MB), may indicate build failure"
-          else
-            echo "✅ Build size: $SIZE MB (reasonable)"
-          fi
-      
-      # Configure GitHub Pages (with enablement)
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
         with:
           enablement: true
-      
-      # Upload artifact
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
