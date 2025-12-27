@@ -15,15 +15,15 @@ const suppressProxyErrorsPlugin = () => ({
     // Intercept ALL logger methods that might log proxy errors
     const originalError = server.config.logger.error.bind(server.config.logger);
     const originalInfo = server.config.logger.info?.bind(server.config.logger);
-    
+
     // Override error logger
     server.config.logger.error = (msg, options) => {
-      const message = typeof msg === 'string' ? msg : 
-                     msg?.message || 
-                     (msg instanceof Error ? msg.toString() : String(msg));
-      
+      const message = typeof msg === 'string' ? msg :
+        msg?.message ||
+        (msg instanceof Error ? msg.toString() : String(msg));
+
       // Check for proxy errors - be very permissive to catch all variations
-      const isProxyError = 
+      const isProxyError =
         message.includes('http proxy error') ||
         message.includes('proxy error') ||
         (message.includes('ECONNREFUSED') && (
@@ -37,7 +37,7 @@ const suppressProxyErrorsPlugin = () => ({
           msg.message?.includes('proxy error') ||
           msg.name === 'AggregateError'
         ));
-      
+
       if (isProxyError) {
         // Show warning only once
         if (!apiServerWarningShown) {
@@ -50,13 +50,13 @@ const suppressProxyErrorsPlugin = () => ({
       // Log other errors normally
       originalError(msg, options);
     };
-    
+
     // Also intercept info logs (Vite sometimes logs errors as info)
     if (originalInfo) {
       server.config.logger.info = (msg, options) => {
         const message = typeof msg === 'string' ? msg : String(msg);
-        if (message.includes('http proxy error') || 
-            (message.includes('ECONNREFUSED') && message.includes('/api/'))) {
+        if (message.includes('http proxy error') ||
+          (message.includes('ECONNREFUSED') && message.includes('/api/'))) {
           return; // Suppress proxy-related info messages
         }
         originalInfo(msg, options);
@@ -70,16 +70,16 @@ export default defineConfig(({ mode }) => {
   // Service worker causes caching issues in native apps where files are bundled
   // When building for Android, use --mode android to disable PWA plugin
   const disablePWA = mode === 'android' || process.env.BUILD_TARGET === 'android';
-  
+
   // Base path configuration:
   // - Android builds (--mode android): Use relative paths './' for Capacitor WebView
   // - GitHub Pages: Use '/Agentic-Farm-Visit/' (set via VITE_BASE_PATH or auto-detected in production)
   // - Local dev: Use '/'
   const isAndroidBuild = mode === 'android' || process.env.BUILD_TARGET === 'android';
-  const basePath = isAndroidBuild 
-    ? './' 
-    : (process.env.VITE_BASE_PATH || (process.env.NODE_ENV === 'production' ? '/Agentic-Farm-Visit/' : '/'));
-  
+  const basePath = isAndroidBuild
+    ? './'
+    : (process.env.VITE_BASE_PATH || (process.env.NODE_ENV === 'production' ? '/Multimodal-Agentic-Farm-Visit/' : '/'));
+
   return {
     base: basePath,
     resolve: {
@@ -111,7 +111,7 @@ export default defineConfig(({ mode }) => {
               { src: "pwa-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
             ]
           },
-          workbox: { 
+          workbox: {
             globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
             navigateFallback: `${basePath}index.html`
           }
@@ -129,19 +129,19 @@ export default defineConfig(({ mode }) => {
           configure: (proxy, _options) => {
             proxy.on('error', (err, req, res) => {
               const errorMessage = err.message || '';
-              const isConnectionRefused = errorMessage.includes('ECONNREFUSED') || 
-                                         errorMessage.includes('connect') ||
-                                         err.code === 'ECONNREFUSED';
-              
+              const isConnectionRefused = errorMessage.includes('ECONNREFUSED') ||
+                errorMessage.includes('connect') ||
+                err.code === 'ECONNREFUSED';
+
               if (isConnectionRefused) {
                 // Return a clean error response
                 if (res && !res.headersSent) {
-                  res.writeHead(503, { 
+                  res.writeHead(503, {
                     'Content-Type': 'application/json',
                     'Access-Control-Allow-Origin': '*'
                   });
-                  res.end(JSON.stringify({ 
-                    error: 'API server unavailable', 
+                  res.end(JSON.stringify({
+                    error: 'API server unavailable',
                     message: 'Test server is not running. Start it with: node test-server.js',
                     hint: 'Run "node test-server.js" in a separate terminal'
                   }));
