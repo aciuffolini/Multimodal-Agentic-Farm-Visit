@@ -40,7 +40,9 @@ jobs:
       - name: Build shared package
         run: |
           echo "=== BUILDING SHARED PACKAGE ==="
-          npm run build:shared
+          cd packages/shared
+          npm install --legacy-peer-deps
+          npm run build
           echo "✅ Shared package build command completed"
 
       - name: Verify shared build
