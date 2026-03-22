@@ -101,28 +101,22 @@ export class AndroidProvider implements ISensorProvider {
       throw new Error('MediaRecorder is not supported in this browser');
     }
 
-    // Request microphone permission
-    const perms = await this.checkPermissions();
-    console.log('[AndroidProvider] Permissions:', perms);
-    
-    if (perms.microphone !== 'granted') {
-      console.log('[AndroidProvider] Requesting microphone permission...');
-      const requested = await this.requestPermissions();
-      if (requested.microphone !== 'granted') {
-        throw new Error('Microphone permission denied. Please enable microphone access in app settings.');
-      }
-    }
-
     try {
       // Use Web Audio API (works on Android via Capacitor WebView)
       console.log('[AndroidProvider] Requesting media stream...');
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        }
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+      } catch (constraintErr) {
+        console.warn('[AndroidProvider] Advanced audio constraints not supported, using fallback:', constraintErr);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       console.log('[AndroidProvider] Media stream obtained');
 
       // Find supported MIME type
@@ -299,7 +293,8 @@ export class AndroidProvider implements ISensorProvider {
     // Microphone (handled via browser API)
     let micPerm: 'granted' | 'denied' = 'denied';
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
       micPerm = 'granted';
     } catch {
       micPerm = 'denied';

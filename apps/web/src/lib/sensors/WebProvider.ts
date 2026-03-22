@@ -110,13 +110,19 @@ export class WebProvider implements ISensorProvider {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        }
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          }
+        });
+      } catch (constraintErr) {
+        console.warn('[WebProvider] Advanced audio constraints not supported, using fallback:', constraintErr);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       console.log('[WebProvider] Media stream obtained');
 
       // Find supported MIME type
@@ -266,7 +272,8 @@ export class WebProvider implements ISensorProvider {
   async requestPermissions(): Promise<PermissionStatus> {
     // Request microphone
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
     } catch (e) {
       console.warn('Microphone permission denied');
     }
