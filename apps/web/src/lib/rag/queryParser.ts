@@ -137,3 +137,4 @@ export function mentionsField(query: string): boolean {
   return fieldPatterns.some(pattern => pattern.test(query));
 }
 
+

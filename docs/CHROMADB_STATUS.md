@@ -107,3 +107,4 @@ python check-chromadb.py
 
 **Action needed:** Sync records from client and generate embeddings.
 
+

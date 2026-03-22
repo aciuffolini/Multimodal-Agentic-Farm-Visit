@@ -36,3 +36,4 @@ echo   - RAG Service: http://localhost:8000/health
 echo.
 pause
 
+

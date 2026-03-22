@@ -141,3 +141,4 @@ VITE_API_URL: Not set (using proxy)
 ✅ **Code** - Updated to read from env vars  
 ⚠️ **Action needed:** Create `apps/web/.env` file with your API key
 
+

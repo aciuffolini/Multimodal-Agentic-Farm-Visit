@@ -150,3 +150,4 @@ $env:EMBEDDING_PROVIDER="auto"
 - OpenAI embeddings are higher quality but require API key
 - Auto mode provides best of both worlds
 
+

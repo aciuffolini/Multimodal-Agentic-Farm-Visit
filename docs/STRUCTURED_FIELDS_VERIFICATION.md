@@ -205,3 +205,4 @@ User Input → IndexedDB (same row) → Sync Queue → SQLite (same row) → Emb
 
 Everything is working as designed! 🎉
 
+

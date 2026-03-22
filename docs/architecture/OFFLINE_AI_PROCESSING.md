@@ -192,3 +192,4 @@ Console logs show queue activity:
 3. **Local Fallback**: Use on-device models when available
 4. **Selective Processing**: User can choose which records to process
 
+

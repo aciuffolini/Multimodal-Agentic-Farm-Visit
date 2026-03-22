@@ -38,3 +38,4 @@ export function registerTemplate(template: TaskTemplate): void {
   taskTemplates[template.id] = template;
 }
 
+

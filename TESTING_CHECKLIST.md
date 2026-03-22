@@ -131,3 +131,4 @@ Once all tests pass:
 
 **Then:** `git add -A && git commit -m "feat: add scalable task template system and offline AI processing"`
 
+

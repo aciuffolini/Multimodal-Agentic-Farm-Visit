@@ -264,3 +264,4 @@ sqlite3 data/visits.db "SELECT COUNT(*) FROM visits;"
 - **Sync (record + media)**: ~1-3s
 - **Search (10 results)**: ~200-500ms
 
+

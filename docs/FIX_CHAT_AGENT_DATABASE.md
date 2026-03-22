@@ -87,3 +87,4 @@ Everything is fixed. Just:
 1. Restart RAG service with API key loaded
 2. Test chat - it should work now!
 
+

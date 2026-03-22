@@ -198,3 +198,4 @@ LLM Response:
 - [ ] Support for issue-specific queries ("all aphid reports")
 - [ ] Visualization of historical trends in chat
 
+

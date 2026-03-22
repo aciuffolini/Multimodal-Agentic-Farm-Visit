@@ -268,3 +268,4 @@ VITE_RAG_SERVER_URL=http://localhost:8000
 - Use RAG features when service is running (full features)
 - Run all three for complete functionality
 
+

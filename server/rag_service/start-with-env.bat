@@ -10,3 +10,4 @@ REM Set environment variable and start service
 set OPENAI_API_KEY=%OPENAI_API_KEY%
 python main.py
 
+

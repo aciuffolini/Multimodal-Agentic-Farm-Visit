@@ -91,3 +91,4 @@ For production:
 ✅ **Server-side:** Set as environment variable → `OPENAI_API_KEY`  
 ✅ **Both use the same key** (one key, two places)
 
+

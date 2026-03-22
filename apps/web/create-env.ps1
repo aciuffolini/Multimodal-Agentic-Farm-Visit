@@ -41,3 +41,4 @@ Write-Host ""
 Write-Host "⚠️  IMPORTANT: Restart your dev server for changes to take effect!" -ForegroundColor Yellow
 Write-Host "   Stop server (Ctrl+C) and run: pnpm run dev" -ForegroundColor Yellow
 
+

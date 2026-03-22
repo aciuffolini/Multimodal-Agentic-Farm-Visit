@@ -177,3 +177,4 @@ python main.py
 - Auto mode provides best of both worlds
 - All error messages are clear and actionable
 
+

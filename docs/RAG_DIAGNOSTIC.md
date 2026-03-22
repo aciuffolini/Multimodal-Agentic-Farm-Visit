@@ -200,3 +200,4 @@ If nothing works, restart everything:
 - Check browser console for detailed error messages
 - RAG service logs show embedding generation status
 
+

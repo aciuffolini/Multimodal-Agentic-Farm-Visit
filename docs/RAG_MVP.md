@@ -238,3 +238,4 @@ Migration happens automatically on first app load after update.
 
 See `docs/RAG_MVP_TESTING.md` for detailed acceptance criteria.
 
+

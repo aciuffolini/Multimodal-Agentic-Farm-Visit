@@ -20,3 +20,4 @@ if (Test-Path ".env") {
 Write-Host "Starting RAG service with API key..."
 python main.py
 
+

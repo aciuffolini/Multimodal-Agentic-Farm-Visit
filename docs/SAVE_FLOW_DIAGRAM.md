@@ -222,3 +222,4 @@ When connectivity is restored:
 
 **Everything is automatic after clicking "Save Visit" in the modal!** 🎉
 
+

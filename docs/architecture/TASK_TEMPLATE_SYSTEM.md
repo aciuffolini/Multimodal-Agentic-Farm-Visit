@@ -227,3 +227,4 @@ registerTemplate(HealthManagementTemplate);
 - **Offline Support**: Export works offline, AI processing requires API key
 - **Backward Compatible**: Existing field visit records can be migrated
 
+

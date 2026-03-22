@@ -95,3 +95,4 @@ You should see in console:
 - Chat responses include historical data ✅
 - No "Embedding provider unavailable" errors ✅
 
+

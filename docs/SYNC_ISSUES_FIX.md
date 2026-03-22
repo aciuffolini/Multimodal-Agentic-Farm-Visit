@@ -171,3 +171,4 @@ import('./src/lib/queues/SyncQueue.ts').then(async ({ getSyncQueue }) => {
    - Check RAG service logs for embedding generation
    - Verify all operations complete successfully
 
+

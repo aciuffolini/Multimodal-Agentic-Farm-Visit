@@ -72,3 +72,4 @@ Write-Host "   [INFO] Embedding provider config: openai" -ForegroundColor White
 Write-Host "   [INFO] Embedding provider active: openai" -ForegroundColor White
 Write-Host ""
 
+

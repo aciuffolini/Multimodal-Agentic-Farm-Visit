@@ -65,3 +65,4 @@ The RAG service needs the `OPENAI_API_KEY` environment variable to generate embe
 2. RAG search will return results
 3. Historical queries will work
 
+

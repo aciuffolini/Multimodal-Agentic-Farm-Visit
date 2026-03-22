@@ -126,3 +126,4 @@ pip install python-dotenv
 4. Check if sync queue processes
 5. Verify embeddings in ChromaDB
 
+
