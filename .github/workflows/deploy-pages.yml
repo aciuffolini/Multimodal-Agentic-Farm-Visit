@@ -37,14 +37,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm run build --filter @farm-visit/shared
+        run: pnpm --filter @farm-visit/shared run build
 
       - name: Build web app
         env:
           NODE_ENV: production
           VITE_BASE_PATH: /Multimodal-Agentic-Farm-Visit/
         run: |
-          pnpm run build --filter @farm-visit/web -- --base=/Multimodal-Agentic-Farm-Visit/
+          pnpm --filter @farm-visit/web run build -- --base=/Multimodal-Agentic-Farm-Visit/
 
       - name: Verify build
         run: |
@@ -56,8 +56,6 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
-        with:
-          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
