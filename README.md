@@ -2,6 +2,26 @@
 
 > A hybrid AI-powered field assistant for agricultural visits, combining offline-first mobile data collection with a multimodal Agentic RAG backend.
 
+## 📦 Download the App
+ 
+ [![Download APK](https://img.shields.io/badge/Download_APK-Latest_Release-green?style=for-the-badge&logo=android)](https://github.com/aciuffolini/Multimodal-Agentic-Farm-Visit/releases/latest/download/app-debug.apk)
+ [![Open Web App](https://img.shields.io/badge/Open-Web_App-blue?style=for-the-badge&logo=react)](https://aciuffolini.github.io/Multimodal-Agentic-Farm-Visit/)
+ 
+ *For mobile installation, tap the green button, download the APK, and enable "Install from unknown sources" on your Android device.*
+
+## 🏷️ Versioning Model
+
+We follow a streamlined **Semantic Versioning** approach tailored for this hybrid app (`vMAJOR.MINOR.PATCH-MODIFIER`):
+
+*   **`MAJOR`** (`v1.x.x`): Significant architectural changes (e.g., swapping RAG database, entirely new multimodal model).
+*   **`MINOR`** (`vX.1.x`): New features or major UI revamps (e.g., adding a new agent type, new mapping integration).
+*   **`PATCH`** (`vX.X.1`): Bug fixes, UI tweaks, dependency updates, or prompt engineering improvements.
+*   **`-MODIFIER`** (Optional): Pre-release tags like `-beta` (testing) or `-fix` (hotfixes outside the normal cycle).
+
+**Examples:**
+*   `v1.0.8`: The 8th stable patch of the 1.0 release.
+*   `v1.0.8-fix`: A critical patch deployed immediately via GitHub Actions on a pushed tag.
+
 ## 🌟 Overview
 
 This system is designed to act as an intelligent companion for agronomists and farmers. It operates in two modes:
