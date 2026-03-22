@@ -68,11 +68,17 @@ jobs:
         run: |
           pnpm --filter @farm-visit/web exec cap sync android
 
+      - name: Clean Gradle caches (fix bcprov-jdk18on-1.79 corruption)
+        run: |
+          rm -rf ~/.gradle/caches/jars-*
+          rm -rf ~/.gradle/caches/transforms-*
+
       - name: Build Android debug APK
         run: |
           cd apps/web/android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew clean --no-daemon 2>&1 | tail -5 || true
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
