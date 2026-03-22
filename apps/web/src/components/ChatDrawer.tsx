@@ -121,6 +121,8 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   const [modelStats, setModelStats] = useState<LLMProviderStats | null>(null);
   const [statsError, setStatsError] = useState('');
   const [statsLoading, setStatsLoading] = useState(false);
+  const [llamaProgress, setLlamaProgress] = useState<string>('');
+  const [llamaDownloading, setLlamaDownloading] = useState(false);
   
   const initialMessage = useMemo(() => {
     const hasKey = getUserApiKey();
@@ -136,6 +138,28 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   
   useEffect(() => {
     persistModelSelection(selectedModel);
+
+    // If Llama is selected, initiate download/load automatically if not ready
+    if (selectedModel === 'llama-small' || selectedModel === 'auto') {
+      import('../lib/llm/LlamaLocal').then(({ llamaLocal }) => {
+        if (!llamaLocal.isReady() && !llamaDownloading) {
+          setLlamaDownloading(true);
+          llamaLocal.initialize((progress) => {
+            setLlamaProgress(progress.text);
+          }).then(() => {
+            setLlamaProgress('✅ Llama 3.2 3B loaded and ready');
+            setLlamaDownloading(false);
+          }).catch((err) => {
+            setLlamaProgress('❌ Error loading model: ' + err.message);
+            setLlamaDownloading(false);
+          });
+        } else if (llamaLocal.isReady()) {
+          setLlamaProgress('✅ Llama 3.2 3B loaded and ready');
+        }
+      });
+    } else {
+      setLlamaProgress('');
+    }
   }, [selectedModel]);
 
   const refreshModelStats = useCallback(async () => {
@@ -356,6 +380,11 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
                   ? `Offline: ${modelStats.localAvailable ? '✅' : '⛔'} · Cloud: ${modelStats.cloudAvailable ? '✅' : '⛔'}`
                   : 'Model availability unknown'}
               </div>
+              {llamaProgress && (
+                <div className="text-[11px] text-emerald-600 font-medium">
+                  {llamaProgress}
+                </div>
+              )}
             </div>
 
             <div className="flex-1 p-3 space-y-2 overflow-auto">

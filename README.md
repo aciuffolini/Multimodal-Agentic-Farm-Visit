@@ -83,6 +83,23 @@ npm run android:build  # Builds Vite -> Syncs Capacitor -> Opens Android Studio
 ```
 *Then use Android Studio to Run on Device or Build Signed APK.*
 
+## 🕶️ Offline AI & Meta Ray-Ban Integration
+
+This application supports running **Meta's Llama-3.2-3B-Instruct** completely offline, providing a multimodal field assistant right on your device. It is also designed to interface with the **Meta Ray-Ban Wearables Device Access Toolkit**.
+
+### 1. Downloading and Using Local Llama
+1. Open the Chat Interface (bottom right FAB in the Web App).
+2. Click the Model Selection dropdown and choose **Llama Small (offline)**.
+3. The phone/browser will automatically begin downloading the model weights (~2GB) directly into your indexedDB storage. *Ensure you are on Wi-Fi for the initial download.*
+4. Once it says "Llama 3.2 3B loaded and ready", you can disconnect from the internet and chat with the AI natively using WebGPU.
+
+### 2. Connecting Meta Ray-Ban Glasses (Developer Preview)
+*Note: Meta Wearables integration requires access to the official Android SDK `.aar` files from the Meta Developer Center.*
+1. Have the Meta SDK available in `apps/web/android/app/libs/`.
+2. The Capacitor interface is already scaffolded in `RayBanPlugin.java` and `RayBanIntegration.ts`.
+3. Enable developer mode on your physical Ray-Ban Meta glasses (tap version 5 times in Meta AI app).
+4. Run the app, and the integration layer will pull the 12MP camera feed and 5-mic array directly into the Local Llama agent.
+
 ## 🧠 Multimodal capabilities
 The system now supports **Phase 1 Multimodal RAG**:
 - **Image Embeddings:** Photos uploaded are automatically embedded using local CLIP models.

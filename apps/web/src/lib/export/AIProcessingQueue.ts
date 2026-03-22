@@ -110,7 +110,7 @@ export class AIProcessingQueue {
     const context: Record<string, any> = {
       task_type: record.task_type,
       note: record.note,
-      timestamp: new Date(record.ts).toISOString(),
+      timestamp: new Date(record.ts || Date.now()).toISOString(),
     };
     
     // Add task-specific fields

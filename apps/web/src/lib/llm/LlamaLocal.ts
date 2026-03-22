@@ -1,244 +1,130 @@
 /**
- * Llama Local Integration - On-Device Offline Fallback
- * For devices without Gemini Nano support (Android 7+)
- * Text-only, fully offline
+ * Llama Local Integration - On-Device Offline Fallback using WebLLM
+ * Runs Llama 3.2 directly in the browser/WebView via WebGPU
+ * Fully offline after initial model download
  */
 
-import { Capacitor } from '@capacitor/core';
-import LlamaLocalNative from './LlamaLocalNative';
+import { CreateMLCEngine, MLCEngine, InitProgressReport } from '@mlc-ai/web-llm';
 
 export interface LlamaLocalInput {
   text: string;
   location?: { lat: number; lon: number };
 }
 
+export type LlamaInitCallback = (progress: InitProgressReport) => void;
+
 export class LlamaLocal {
-  private initialized: boolean = false;
-  private available: boolean = false;
-  private availabilityChecked: boolean = false;
+  private engine: MLCEngine | null = null;
+  private initializing: boolean = false;
+  private downloadProgress: string = '';
+  // The Llama 3.2 1B or 3B model (3B is recommended for this hardware)
+  private readonly MODEL_ID = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
 
   /**
-   * Check if Llama Local is available on this device
-   * Requires model to be downloaded/installed
+   * Check if WebGPU (and therefore WebLLM) is available on this device
    */
   async checkAvailability(): Promise<boolean> {
-    if (this.availabilityChecked) {
-      return this.available;
-    }
-
-    // Only available on Android
-    if (!Capacitor.isNativePlatform()) {
-      this.available = false;
-      this.availabilityChecked = true;
+    // Check if browser supports WebGPU
+    if (!(navigator as any).gpu) {
+      console.warn('[LlamaLocal] WebGPU not supported on this device/browser.');
       return false;
     }
-
-    try {
-      const result = await LlamaLocalNative.isAvailable();
-      this.available = result.available || false;
-      this.availabilityChecked = true;
-      
-      if (this.available) {
-        console.log('[LlamaLocal] Available on device');
-      } else {
-        console.warn('[LlamaLocal] Not available:', result.reason || 'Model not installed');
-      }
-    } catch (err: any) {
-      console.error('[LlamaLocal] Error checking availability:', err);
-      this.available = false;
-      this.availabilityChecked = true;
-    }
-
-    return this.available;
+    return true;
   }
 
   /**
-   * Initialize Llama Local model
-   * May download model if not present (requires internet first time)
+   * Get the current download/init progress
    */
-  async initialize(): Promise<void> {
-    if (!Capacitor.isNativePlatform()) {
-      throw new Error('Llama Local only available on Android devices');
+  getProgress(): string {
+    return this.downloadProgress;
+  }
+
+  /**
+   * Initialize the WebLLM engine and download the model if needed
+   */
+  async initialize(onProgress?: LlamaInitCallback): Promise<void> {
+    if (this.engine) return; // already initialized
+    if (this.initializing) throw new Error('Already initializing Llama Local model. Please wait.');
+
+    const isAvailable = await this.checkAvailability();
+    if (!isAvailable) {
+      throw new Error('WebGPU is not supported on this device. Cannot run Llama Local.');
     }
 
-    if (this.initialized) {
-      return;
-    }
-
-    // Check availability first
-    const available = await this.checkAvailability();
-    if (!available) {
-      throw new Error('Llama Local model not available. Please download the model first.');
-    }
-
+    this.initializing = true;
     try {
-      const result = await LlamaLocalNative.loadModel();
-      this.initialized = result.initialized;
+      console.log(`[LlamaLocal] Initializing ${this.MODEL_ID}...`);
       
-      if (this.initialized) {
-        console.log('[LlamaLocal] Initialized:', result.message);
-      } else {
-        throw new Error('Failed to initialize Llama Local');
-      }
+      const initProgressCallback = (report: InitProgressReport) => {
+        this.downloadProgress = report.text;
+        if (onProgress) onProgress(report);
+      };
+
+      this.engine = await CreateMLCEngine(this.MODEL_ID, {
+        initProgressCallback,
+      });
+
+      console.log('[LlamaLocal] Engine initialized successfully!');
+      this.downloadProgress = 'Ready';
     } catch (err: any) {
       console.error('[LlamaLocal] Initialization failed:', err);
-      throw err;
+      this.engine = null;
+      this.downloadProgress = 'Error loading model';
+      throw new Error(`Failed to load Llama model: ${err.message}`);
+    } finally {
+      this.initializing = false;
     }
   }
 
   /**
-   * Stream completion (for chat)
+   * Stream completion for chat
    */
   async *stream(input: LlamaLocalInput): AsyncGenerator<string> {
-    if (!this.available) {
-      await this.checkAvailability();
-      
-      if (!this.available) {
-        throw new Error('Llama Local not available on this device. Requires model to be installed.');
-      }
-    }
-
-    if (!this.initialized) {
-      await this.initialize();
+    if (!this.engine) {
+      throw new Error('Llama Local engine is not initialized. Please load the model first.');
     }
 
     if (!input.text) {
       throw new Error('Text input required');
     }
 
-    // Check if input already contains a formatted prompt (from enhanced LLMProvider)
-    // If it contains "User:" and "Assistant:" markers, use it directly
-    // Otherwise, build prompt with context
-    let prompt: string;
-    if (input.text.includes('User:') && input.text.includes('Assistant:')) {
-      // Enhanced prompt already formatted, use as-is
-      prompt = input.text;
-      console.log('[LlamaLocal] Using enhanced prompt from LLMProvider');
-    } else {
-      // Build prompt with context (legacy behavior)
-      prompt = this.buildPrompt(input);
+    // Build the chat prompt
+    let promptText = input.text;
+    if (input.location) {
+      promptText += `\n\nLocation Context: ${input.location.lat.toFixed(6)}, ${input.location.lon.toFixed(6)}`;
     }
 
     try {
-      // Set up listener for stream chunks (similar to GeminiNano)
-      const chunks: string[] = [];
-      let streamComplete = false;
-      let streamError: Error | null = null;
-      let listenerHandle: any = null;
-
-      // Create promise that resolves when stream is complete
-      const streamCompletePromise = new Promise<void>((resolve, reject) => {
-        listenerHandle = LlamaLocalNative.addListener('streamChunk', (data: any) => {
-          try {
-            if (data.done === true) {
-              streamComplete = true;
-              resolve();
-            } else if (data.text !== undefined && data.text !== null) {
-              chunks.push(data.text);
-            }
-          } catch (err: any) {
-            streamError = err;
-            streamComplete = true;
-            reject(err);
-          }
-        });
+      // The MLCEngine expects OpenAI-like ChatCompletion format
+      const generator = await this.engine.chat.completions.create({
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are an offline agricultural assistant for field visits. Keep answers concise, practical, and helpful.' 
+          },
+          { role: 'user', content: promptText }
+        ],
+        stream: true,
       });
 
-      // Start streaming
-      LlamaLocalNative.stream({ prompt }).catch((err: any) => {
-        console.error('[LlamaLocal] Stream start error:', err);
-        streamError = err;
-        streamComplete = true;
-      });
-
-      // Yield chunks as they arrive
-      const maxWaitTime = 60000; // 60 seconds timeout (Llama is slower)
-      const startTime = Date.now();
-
-      while (!streamComplete || chunks.length > 0) {
-        // Check timeout
-        if (Date.now() - startTime > maxWaitTime) {
-          console.warn('[LlamaLocal] Stream timeout after 60s');
-          break;
-        }
-
-        // Check for error
-        if (streamError) {
-          throw streamError;
-        }
-
-        // Yield available chunks
-        while (chunks.length > 0) {
-          const chunk = chunks.shift();
-          if (chunk) {
-            yield chunk;
-          }
-        }
-
-        // Small delay to avoid busy-waiting
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        // Check if stream promise resolved
-        try {
-          await Promise.race([
-            streamCompletePromise,
-            new Promise(resolve => setTimeout(resolve, 0))
-          ]);
-        } catch (err) {
-          // Stream promise rejected, error already set
+      for await (const chunk of generator) {
+        if (chunk.choices[0]?.delta?.content) {
+          yield chunk.choices[0].delta.content;
         }
       }
-
-      // Cleanup listener
-      if (listenerHandle && typeof listenerHandle.remove === 'function') {
-        try {
-          listenerHandle.remove();
-        } catch (err) {
-          console.warn('[LlamaLocal] Error removing listener:', err);
-        }
-      }
-
-      // Final yield of any remaining chunks
-      while (chunks.length > 0) {
-        const chunk = chunks.shift();
-        if (chunk) {
-          yield chunk;
-        }
-      }
-
     } catch (err: any) {
       console.error('[LlamaLocal] Streaming failed:', err);
-      throw new Error(`Llama Local streaming failed: ${err.message}`);
+      throw new Error(`Llama Local generation failed: ${err.message}`);
     }
   }
 
   /**
-   * Build prompt with context
+   * Check if the engine is ready
    */
-  private buildPrompt(input: LlamaLocalInput): string {
-    const systemPrompt = `You are a helpful agricultural assistant for field visits. Help farmers with crop management, pest/disease identification, and field visit data extraction. Provide concise, practical advice in both English and Spanish when appropriate.`;
-
-    let userPrompt = input.text || '';
-
-    // Add location context if available
-    if (input.location) {
-      userPrompt += `\n\nLocation: ${input.location.lat.toFixed(6)}, ${input.location.lon.toFixed(6)}`;
-    }
-
-    return `${systemPrompt}\n\nUser: ${userPrompt}\n\nAssistant:`;
-  }
-
-  /**
-   * Check if Llama Local is available
-   */
-  async isAvailable(): Promise<boolean> {
-    if (!this.availabilityChecked) {
-      await this.checkAvailability();
-    }
-    return this.available;
+  isReady(): boolean {
+    return this.engine !== null;
   }
 }
 
 // Default instance
 export const llamaLocal = new LlamaLocal();
-
