@@ -103,7 +103,7 @@ export class WebProvider implements ISensorProvider {
 
   async startRecording(): Promise<void> {
     console.log('[WebProvider] Starting recording...');
-    
+
     // Check MediaRecorder support
     if (typeof MediaRecorder === 'undefined') {
       throw new Error('MediaRecorder is not supported in this browser');
@@ -112,7 +112,7 @@ export class WebProvider implements ISensorProvider {
     try {
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
+        stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
@@ -191,7 +191,7 @@ export class WebProvider implements ISensorProvider {
       const onStopHandler = async () => {
         try {
           console.log('[WebProvider] Processing audio chunks:', this.audioChunks.length);
-          
+
           if (this.audioChunks.length === 0) {
             reject(new Error('No audio data recorded'));
             return;
@@ -200,7 +200,7 @@ export class WebProvider implements ISensorProvider {
           // Determine MIME type from chunks or use default
           const mimeType = this.audioRecording?.mimeType || 'audio/webm';
           console.log('[WebProvider] Creating blob with type:', mimeType);
-          
+
           const audioBlob = new Blob(this.audioChunks, { type: mimeType });
           console.log('[WebProvider] Blob created, size:', audioBlob.size, 'bytes');
 
@@ -210,18 +210,18 @@ export class WebProvider implements ISensorProvider {
           }
 
           const reader = new FileReader();
-          
+
           reader.onloadend = () => {
             const dataUrl = reader.result as string;
             console.log('[WebProvider] Audio data URL generated, length:', dataUrl.length);
             resolve(dataUrl);
           };
-          
+
           reader.onerror = (error) => {
             console.error('[WebProvider] FileReader error:', error);
             reject(new Error('Failed to read audio data'));
           };
-          
+
           reader.readAsDataURL(audioBlob);
 
           // Stop all tracks
@@ -231,7 +231,7 @@ export class WebProvider implements ISensorProvider {
               console.log('[WebProvider] Stopped track:', track.kind);
             });
           }
-          
+
           this.audioRecording = null;
           this.audioChunks = [];
         } catch (err: any) {
@@ -283,7 +283,7 @@ export class WebProvider implements ISensorProvider {
 
   async checkPermissions(): Promise<PermissionStatus> {
     const hasMediaDevices = !!navigator.mediaDevices;
-    
+
     return {
       camera: 'prompt', // Web can't check camera permission statically
       microphone: hasMediaDevices ? 'prompt' : 'denied',

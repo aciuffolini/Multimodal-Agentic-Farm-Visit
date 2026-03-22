@@ -128,13 +128,6 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Set SSE headers
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        });
-
         // Route to appropriate provider
         if (provider === 'claude-code') {
           console.log('   ✅ Calling Anthropic API...');
@@ -149,7 +142,7 @@ const server = http.createServer(async (req, res) => {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'claude-3-5-sonnet-20241022', // Claude Code model
+                model: 'claude-3-5-sonnet-20241022',
                 max_tokens: 4096,
                 messages: messages,
                 stream: true,
@@ -159,10 +152,17 @@ const server = http.createServer(async (req, res) => {
             if (!anthropicRes.ok) {
               const errorText = await anthropicRes.text();
               console.log('   ❌ Anthropic Error:', anthropicRes.status, errorText.substring(0, 100));
-              res.write(`data: ${JSON.stringify({ error: errorText, status: anthropicRes.status })}\n\n`);
-              res.end();
+              res.writeHead(anthropicRes.status, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: errorText, status: anthropicRes.status }));
               return;
             }
+
+            // Set SSE headers only after upstream confirms success
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
 
             console.log('   ✅ Streaming response...');
 
@@ -274,8 +274,6 @@ const server = http.createServer(async (req, res) => {
 
         // Call OpenAI
         try {
-          // Use messages as-is - LLMProvider already includes enhanced system prompt with visit context
-          // If messages don't have a system message, add a basic one (fallback)
           const hasSystemMessage = messages.some(m => m.role === 'system');
           const messagesWithSystem = hasSystemMessage 
             ? messages 
@@ -297,19 +295,16 @@ Respond in a friendly, professional manner suitable for field work.`
                 ...messages
               ];
           
-          // Log system message content for debugging (first 200 chars)
           if (hasSystemMessage) {
             const systemMsg = messages.find(m => m.role === 'system');
             console.log('   📝 System message (with context):', systemMsg?.content?.substring(0, 200) + '...');
           }
 
-          // Check for vision content (images in content arrays)
           const userMsg = messagesWithSystem.find((m) => m.role === 'user');
           const hasVision = userMsg && Array.isArray(userMsg.content);
           if (hasVision) {
             const imageCount = userMsg.content.filter((item) => item.type === 'image_url').length;
             console.log('   📷 Vision content detected:', imageCount, 'image(s) in user message');
-            console.log('   📷 User message content type:', typeof userMsg.content, Array.isArray(userMsg.content) ? '(array format)' : '(string)');
           }
 
           const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -329,26 +324,26 @@ Respond in a friendly, professional manner suitable for field work.`
             const errorText = await openaiRes.text();
             console.log('   ❌ OpenAI Error:', openaiRes.status, errorText.substring(0, 200));
             
-            // Send proper error response (not in SSE format since we haven't started streaming)
-            if (!res.headersSent) {
-              res.writeHead(500, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ 
-                error: 'OpenAI API error',
-                message: errorText,
-                status: openaiRes.status,
-                hint: 'Check your API key and OpenAI account status'
-              }));
-            } else {
-              // Headers already sent, send error in stream
-              res.write(`data: ${JSON.stringify({ error: errorText, status: openaiRes.status, type: 'error' })}\n\n`);
-              res.end();
-            }
+            res.writeHead(openaiRes.status >= 400 ? openaiRes.status : 500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              error: 'OpenAI API error',
+              message: errorText,
+              status: openaiRes.status,
+              hint: 'Check your API key and OpenAI account status'
+            }));
             return;
           }
 
+          // Set SSE headers only after upstream confirms success
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          });
+
           console.log('   ✅ Streaming response...');
 
-          // DIRECT PASSTHROUGH - No manipulation, just forward bytes
+          // DIRECT PASSTHROUGH - forward bytes from OpenAI
           const reader = openaiRes.body.getReader();
           const decoder = new TextDecoder();
           let chunkCount = 0;

@@ -15,7 +15,7 @@ export interface RAGSearchResult {
     field_id?: string;
     crop?: string;
     issue?: string;
-    createdAt: number;
+    created_at: number;
     [key: string]: any;
   };
 }
