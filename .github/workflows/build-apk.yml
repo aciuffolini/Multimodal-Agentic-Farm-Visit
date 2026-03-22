@@ -103,6 +103,14 @@ jobs:
             exit 1
           }
           echo "✅ APK build completed"
+
+      - name: Upload Gradle Error Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-error-log
+          path: apps/web/android/build.log
+          retention-days: 5
       
       - name: Verify APK exists
         run: |
