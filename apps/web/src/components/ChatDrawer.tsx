@@ -9,6 +9,8 @@ import { ChatMessage } from '@farm-visit/shared';
 import { llmProvider } from '../lib/llm/LLMProvider';
 import type { ModelOption, LLMInput, LLMProviderStats } from '../lib/llm/LLMProvider';
 import { getUserApiKey, setUserApiKey } from '../lib/config/userKey';
+import { useMicrophone } from '../hooks/useMicrophone';
+import { localWhisper } from '../lib/agents/LocalWhisper';
 
 const MODEL_STORAGE_KEY = 'farm_visit_chat_model';
 
@@ -115,6 +117,9 @@ interface ChatDrawerProps {
 export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const { recording, startRecording, stopRecording, audioUrl, clearAudio } = useMicrophone();
+  const [whisperProgress, setWhisperProgress] = useState<string>('');
+  const [whisperDownloading, setWhisperDownloading] = useState(false);
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [apiKey, setApiKey] = useState(getUserApiKey());
   const [selectedModel, setSelectedModel] = useState<ModelOption>(() => loadStoredModel());
@@ -160,6 +165,26 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
     } else {
       setLlamaProgress('');
     }
+
+    // Load Whisper for offline voice chat
+    if (selectedModel === 'llama-small' || selectedModel === 'auto' || selectedModel === 'nano') {
+      if (!localWhisper.isReady() && !whisperDownloading) {
+        setWhisperDownloading(true);
+        localWhisper.initialize((progress) => {
+          setWhisperProgress(localWhisper.getProgress());
+        }).then(() => {
+          setWhisperProgress('✅ Whisper STT loaded');
+          setWhisperDownloading(false);
+        }).catch(err => {
+          setWhisperProgress('❌ Whisper failed: ' + err.message);
+          setWhisperDownloading(false);
+        });
+      } else if (localWhisper.isReady()) {
+        setWhisperProgress('✅ Whisper STT loaded');
+      }
+    } else {
+      setWhisperProgress('');
+    }
   }, [selectedModel]);
 
   const refreshModelStats = useCallback(async () => {
@@ -186,6 +211,35 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
       refreshModelStats();
     }
   }, [open, refreshModelStats]);
+
+  // Handle local STT transcription when recording finishes
+  useEffect(() => {
+    if (audioUrl && !recording) {
+      const transcribeAudio = async () => {
+        setBusy(true);
+        try {
+          if (localWhisper.isReady()) {
+            setWhisperProgress('🎙️ Transcribing locally...');
+            const response = await fetch(audioUrl);
+            const blob = await response.blob();
+            const text = await localWhisper.transcribe(blob);
+            setInput(prev => prev ? `${prev} ${text.trim()}` : text.trim());
+            setWhisperProgress('✅ Whisper STT loaded');
+          } else {
+            console.warn('Whisper not ready');
+            setWhisperProgress('⚠️ Model not ready');
+          }
+        } catch (err) {
+          console.error('Transcription error:', err);
+          setWhisperProgress('❌ Transcription failed');
+        } finally {
+          clearAudio();
+          setBusy(false);
+        }
+      };
+      transcribeAudio();
+    }
+  }, [audioUrl, recording]);
 
   const handleApiKeySave = () => {
     setUserApiKey(apiKey);
@@ -407,27 +461,62 @@ export function ChatDrawer({ open, onClose }: ChatDrawerProps) {
             </div>
 
             <div className="border-t border-slate-200 p-3">
-              <div className="flex items-center gap-2">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                  placeholder="Type your message..."
-                  className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                  disabled={busy}
-                />
-                <button
-                  disabled={busy || !input.trim()}
-                  onClick={send}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {busy ? '...' : 'Send'}
-                </button>
+              <div className="flex flex-col gap-2">
+                {whisperProgress && (
+                  <div className="text-[10px] text-emerald-600 font-medium px-1">
+                    {whisperProgress}
+                  </div>
+                )}
+                {recording && (
+                  <div className="text-xs text-rose-500 animate-pulse px-1 flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-rose-500"></span>
+                    Recording your voice...
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      if (recording) {
+                        setBusy(true);
+                        try {
+                          await stopRecording();
+                          // The audioUrl state won't be immediately available here because React state is async
+                          // We should ideally transcribe natively or use a ref, but for now we'll handle the actual transcription in a useEffect below
+                        } catch (err) {
+                          console.error(err);
+                          setBusy(false);
+                        }
+                      } else {
+                        startRecording();
+                      }
+                    }}
+                    className={`rounded-xl border border-slate-300 p-2 lgpx-3 lgpy-2 text-sm transition-colors ${recording ? 'bg-rose-100 text-rose-600 border-rose-300' : 'bg-white hover:bg-slate-50 text-slate-600'}`}
+                    disabled={busy || (whisperDownloading && !recording)}
+                    title="Voice Input"
+                  >
+                    🎤
+                  </button>
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        send();
+                      }
+                    }}
+                    placeholder="Type your message..."
+                    className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    disabled={busy}
+                  />
+                  <button
+                    disabled={busy || !input.trim()}
+                    onClick={send}
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 text-slate-700"
+                  >
+                    {busy ? '...' : 'Send'}
+                  </button>
+                </div>
               </div>
             </div>
           </motion.aside>

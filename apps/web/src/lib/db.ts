@@ -81,7 +81,7 @@ class FarmVisitDB extends Dexie {
         
         // Migrate sync status
         if (record.synced !== undefined && !record.syncStatus) {
-          updates.syncStatus = record.synced ? 'completed' : 'pending';  // Use 'completed' not 'synced'
+          updates.syncStatus = record.synced ? 'synced' : 'pending';
           if (record.synced) {
             updates.syncedAt = record.updatedAt || Date.now();
           }
@@ -143,7 +143,7 @@ export const visitDB = {
     const now = Date.now();
     const record: VisitRecord = {
       ...visit,
-      createdAt: visit.createdAt || now,
+      createdAt: (visit as any).createdAt || now,
       updatedAt: now,
       syncStatus: visit.syncStatus || 'pending',
       aiStatus: visit.aiStatus || {
@@ -165,7 +165,7 @@ export const visitDB = {
 
   async markSynced(id: string): Promise<void> {
     await db.visits.update(id, { 
-      syncStatus: 'completed',  // Use 'completed' not 'synced' (matches schema)
+      syncStatus: 'synced',
       syncedAt: Date.now(),
       updatedAt: Date.now(),
     });

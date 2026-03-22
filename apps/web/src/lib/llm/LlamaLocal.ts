@@ -8,6 +8,7 @@ import { CreateMLCEngine, MLCEngine, InitProgressReport } from '@mlc-ai/web-llm'
 
 export interface LlamaLocalInput {
   text: string;
+  systemPrompt?: string;
   location?: { lat: number; lon: number };
 }
 
@@ -100,7 +101,7 @@ export class LlamaLocal {
         messages: [
           { 
             role: 'system', 
-            content: 'You are an offline agricultural assistant for field visits. Keep answers concise, practical, and helpful.' 
+            content: input.systemPrompt || 'You are an offline agricultural assistant for field visits. Keep answers concise, practical, and helpful.' 
           },
           { role: 'user', content: promptText }
         ],

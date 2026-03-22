@@ -59,10 +59,10 @@ export class ExportService {
     
     // Filter by date range
     if (options.fromDate) {
-      filtered = filtered.filter(r => r.ts >= options.fromDate!.getTime());
+      filtered = filtered.filter(r => (r.ts || 0) >= options.fromDate!.getTime());
     }
     if (options.toDate) {
-      filtered = filtered.filter(r => r.ts <= options.toDate!.getTime());
+      filtered = filtered.filter(r => (r.ts || Date.now()) <= options.toDate!.getTime());
     }
     
     // Filter by field IDs (generic - works for any task)

@@ -16,6 +16,8 @@ import { swarmTaskRouter } from '../lib/agents/SwarmTaskRouter';
 import { FarmMap } from './FarmMap';
 import { KMZUploader } from './KMZUploader';
 import { KMZData } from '../lib/map/KMZLoader';
+import { Share } from '@capacitor/share';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 
 export function FieldVisit() {
   const { gps, error: gpsError, loading: gpsLoading, getGPS } = useGPS();
@@ -183,7 +185,7 @@ export function FieldVisit() {
     }
   };
 
-  const downloadCSV = () => {
+  const shareCSV = async () => {
     if (records.length === 0) {
       alert('No records to export');
       return;
@@ -196,12 +198,33 @@ export function FieldVisit() {
       .concat(records.map(r => cols.map(c => escape(r[c as keyof VisitRecord])).join(',')))
       .join('\n');
     
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `farm_visits_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const fileName = `farm_visits_${new Date().toISOString().split('T')[0]}.csv`;
+
+    try {
+      // Attempt native Capacitor share via filesystem
+      const result = await Filesystem.writeFile({
+        path: fileName,
+        data: csv,
+        directory: Directory.Cache,
+        encoding: Encoding.UTF8,
+      });
+
+      await Share.share({
+        title: 'Farm Visit Records',
+        text: 'Attached are the latest offline field data records (CSV).',
+        url: result.uri,
+        dialogTitle: 'Share/Email Field Records',
+      });
+    } catch (err) {
+      console.warn('Native share failed or browser environment, falling back to download:', err);
+      // Fallback for Web browser
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
   };
 
   const handleClearDB = async () => {
@@ -488,10 +511,10 @@ export function FieldVisit() {
           <div className="text-sm font-medium">Recent Records ({records.length})</div>
           <div className="flex gap-2">
             <button
-              onClick={downloadCSV}
-              className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-sm hover:shadow"
+              onClick={shareCSV}
+              className="rounded-xl flex items-center gap-1 border border-slate-300 bg-white px-3 py-1.5 text-xs shadow-sm hover:shadow"
             >
-              Export CSV
+              <span>📧</span> Share/Email CSV
             </button>
             <button
               onClick={handleClearDB}
@@ -523,14 +546,14 @@ export function FieldVisit() {
               ) : (
                 records.map((r) => (
                   <tr key={r.id} className="odd:bg-white even:bg-slate-50">
-                    <td className="p-2">{new Date(r.ts).toLocaleString()}</td>
+                    <td className="p-2">{new Date(r.ts || Date.now()).toLocaleString()}</td>
                     <td className="p-2">{r.field_id || '-'}</td>
                     <td className="p-2">{r.crop || '-'}</td>
                     <td className="p-2">{r.issue || '-'}</td>
                     <td className="p-2">{r.severity ?? '-'}</td>
                     <td className="p-2">
-                      {r.syncStatus === 'completed' ? '✅' : 
-                       r.syncStatus === 'in_progress' ? '🔄' : 
+                      {r.syncStatus === 'synced' ? '✅' : 
+                       r.syncStatus === 'syncing' ? '🔄' : 
                        r.syncStatus === 'failed' ? '❌' : '⏳'}
                     </td>
                   </tr>

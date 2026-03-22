@@ -54,13 +54,9 @@ export class LocalLLM {
       if (available) {
         console.log('[LocalLLM] Using Llama Local');
         
-        // Build prompt with system message if provided
-        const fullPrompt = input.systemPrompt 
-          ? `${input.systemPrompt}\n\nUser: ${input.text}\n\nAssistant:`
-          : input.text;
-        
         yield* llamaLocal.stream({
-          text: fullPrompt,
+          text: input.text,
+          systemPrompt: input.systemPrompt,
           location: input.location,
         });
         return;

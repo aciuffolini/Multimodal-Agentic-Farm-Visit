@@ -7,6 +7,7 @@
 import { BaseRecord } from '@farm-visit/shared';
 import { MediaProcessor } from './MediaProcessor';
 import { visitDB } from '../db';
+import { localWhisper } from '../agents/LocalWhisper';
 
 export interface AIProcessingTask {
   id: string;
@@ -232,10 +233,35 @@ export class AIProcessingQueue {
     
     // Process audio
     if ((task.taskType === 'audio_transcription' || task.taskType === 'both') && task.audioData) {
-      const transcription = await this.mediaProcessor.transcribeAudio(task.audioData);
-      index.audio_transcript = transcription.transcript;
-      index.audio_summary = transcription.summary;
-      index.audio_language = transcription.language;
+      let trText = '';
+      let trSummary = '';
+      let trLang = 'unknown';
+
+      try {
+        if (!navigator.onLine || localWhisper.isReady()) {
+          console.log('[AIQueue] Using offline Whisper for STT');
+          if (!localWhisper.isReady()) {
+            await localWhisper.initialize();
+          }
+          const res = await fetch(task.audioData);
+          const audioBlob = await res.blob();
+          trText = await localWhisper.transcribe(audioBlob);
+          trSummary = trText.substring(0, 200);
+        } else {
+          console.log('[AIQueue] Using Cloud API for STT');
+          const transcription = await this.mediaProcessor.transcribeAudio(task.audioData);
+          trText = transcription.transcript;
+          trSummary = transcription.summary;
+          trLang = transcription.language;
+        }
+      } catch (err: any) {
+        console.error('[AIQueue] STT failed:', err);
+        trSummary = `Audio available (STT Error: ${err.message})`;
+      }
+
+      index.audio_transcript = trText;
+      index.audio_summary = trSummary;
+      index.audio_language = trLang;
     }
     
     // Update record in database with AI-generated index

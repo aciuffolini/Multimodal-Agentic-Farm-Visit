@@ -91,21 +91,23 @@ export class LLMProvider {
     // Build system prompt from visit context (with RAG search if available)
     const systemPrompt = await this.buildSystemPrompt(input.visitContext, input.text);
 
-    // Extract images from visit context
+    // Extract images from visit context (only for cloud multimodal models)
     const images: string[] = [];
-    if (input.images) {
-      images.push(...input.images);
-    }
-    if (input.visitContext?.current?.photo) {
-      images.push(input.visitContext.current.photo);
-    }
-    if (input.visitContext?.latest?.photo_data) {
-      images.push(input.visitContext.latest.photo_data);
-    }
-    if (input.visitContext?.allVisits) {
-      for (const visit of input.visitContext.allVisits) {
-        if (visit.photo_data && !images.includes(visit.photo_data)) {
-          images.push(visit.photo_data);
+    if (preferredModel !== 'local') {
+      if (input.images) {
+        images.push(...input.images);
+      }
+      if (input.visitContext?.current?.photo) {
+        images.push(input.visitContext.current.photo);
+      }
+      if (input.visitContext?.latest?.photo_data) {
+        images.push(input.visitContext.latest.photo_data);
+      }
+      if (input.visitContext?.allVisits) {
+        for (const visit of input.visitContext.allVisits) {
+          if (visit.photo_data && !images.includes(visit.photo_data)) {
+            images.push(visit.photo_data);
+          }
         }
       }
     }

@@ -291,11 +291,16 @@ export class MediaStorage {
         encoding: Encoding.UTF8,
       });
       
-      // Convert base64 to blob
-      const binaryString = atob(file.data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      let bytes: Uint8Array;
+      if (typeof file.data === 'string') {
+        const binaryString = atob(file.data);
+        bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+      } else {
+        const arrayBuffer = await (file.data as Blob).arrayBuffer();
+        bytes = new Uint8Array(arrayBuffer);
       }
       
       // Determine mime type from URI
@@ -311,7 +316,7 @@ export class MediaStorage {
       
       const blobOptions2: BlobPropertyBag = { type: mimeType };
       return {
-        data: new Blob([bytes], blobOptions2),
+        data: new Blob([bytes as any], blobOptions2),
         mimeType,
         size: bytes.length,
       };
