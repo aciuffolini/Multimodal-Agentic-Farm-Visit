@@ -6,6 +6,12 @@
 
 import { ISensorProvider, GPSLocation, PhotoResult, CameraOptions, PermissionStatus } from './ISensorProvider';
 
+let _preferredAudioDeviceId: string | undefined;
+
+export function setPreferredAudioDevice(deviceId: string | undefined) {
+  _preferredAudioDeviceId = deviceId;
+}
+
 export class WebProvider implements ISensorProvider {
   private audioRecording: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
@@ -111,8 +117,7 @@ export class WebProvider implements ISensorProvider {
 
     try {
       let stream: MediaStream;
-      const { SensorManager } = await import('./SensorManager');
-      const preferredDeviceId = SensorManager.getInstance().preferredAudioDeviceId;
+      const preferredDeviceId = _preferredAudioDeviceId;
       const audioConstraints: MediaTrackConstraints = {
         echoCancellation: true,
         noiseSuppression: true,

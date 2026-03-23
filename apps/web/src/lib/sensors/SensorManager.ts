@@ -7,18 +7,19 @@
 
 import { Capacitor } from '@capacitor/core';
 import { ISensorProvider, SensorSource } from './ISensorProvider';
-import { AndroidProvider } from './AndroidProvider';
-import { WebProvider } from './WebProvider';
+import { AndroidProvider, setPreferredAudioDeviceAndroid } from './AndroidProvider';
+import { WebProvider, setPreferredAudioDevice } from './WebProvider';
 
 export class SensorManager {
   private static instance: SensorManager;
   private provider: ISensorProvider;
   private _source: SensorSource = 'phone';
   private _listeners: Array<(source: SensorSource) => void> = [];
-  private _preferredAudioDeviceId: string | undefined;
+  private _isNative: boolean;
 
   private constructor() {
-    if (Capacitor.isNativePlatform()) {
+    this._isNative = Capacitor.isNativePlatform();
+    if (this._isNative) {
       this.provider = new AndroidProvider();
     } else {
       this.provider = new WebProvider();
@@ -47,15 +48,20 @@ export class SensorManager {
   async setSource(source: SensorSource): Promise<void> {
     this._source = source;
 
+    let deviceId: string | undefined;
     if (source === 'glasses') {
       const extDevice = await this.findExternalDevice();
-      this._preferredAudioDeviceId = extDevice?.deviceId;
+      deviceId = extDevice?.deviceId;
+    }
+
+    if (this._isNative) {
+      setPreferredAudioDeviceAndroid(deviceId);
     } else {
-      this._preferredAudioDeviceId = undefined;
+      setPreferredAudioDevice(deviceId);
     }
 
     this._listeners.forEach(fn => fn(source));
-    console.log(`[SensorManager] Source set to: ${source}`, this._preferredAudioDeviceId ? `(device: ${this._preferredAudioDeviceId})` : '');
+    console.log(`[SensorManager] Source set to: ${source}`, deviceId ? `(device: ${deviceId})` : '');
   }
 
   onSourceChange(fn: (source: SensorSource) => void): () => void {
@@ -63,10 +69,6 @@ export class SensorManager {
     return () => {
       this._listeners = this._listeners.filter(l => l !== fn);
     };
-  }
-
-  get preferredAudioDeviceId(): string | undefined {
-    return this._preferredAudioDeviceId;
   }
 
   /**

@@ -7,6 +7,12 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Geolocation, Position, PermissionStatus as GeoPermissionStatus } from '@capacitor/geolocation';
 import { ISensorProvider, GPSLocation, PhotoResult, CameraOptions, PermissionStatus } from './ISensorProvider';
 
+let _preferredAudioDeviceId: string | undefined;
+
+export function setPreferredAudioDeviceAndroid(deviceId: string | undefined) {
+  _preferredAudioDeviceId = deviceId;
+}
+
 export class AndroidProvider implements ISensorProvider {
   private audioRecording: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
@@ -105,8 +111,7 @@ export class AndroidProvider implements ISensorProvider {
       // Use Web Audio API (works on Android via Capacitor WebView)
       console.log('[AndroidProvider] Requesting media stream...');
       let stream: MediaStream;
-      const { SensorManager } = await import('./SensorManager');
-      const preferredDeviceId = SensorManager.getInstance().preferredAudioDeviceId;
+      const preferredDeviceId = _preferredAudioDeviceId;
       const audioConstraints: MediaTrackConstraints = {
         echoCancellation: true,
         noiseSuppression: true,
