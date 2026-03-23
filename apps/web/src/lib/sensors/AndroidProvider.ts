@@ -101,14 +101,32 @@ export class AndroidProvider implements ISensorProvider {
 
   async startRecording(): Promise<void> {
     console.log('[AndroidProvider] Starting recording...');
-    
-    // Check MediaRecorder support
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Audio recording is not supported. Please update your WebView or Android System WebView app.');
+    }
+
     if (typeof MediaRecorder === 'undefined') {
       throw new Error('MediaRecorder is not supported in this browser');
     }
 
     try {
-      // Use Web Audio API (works on Android via Capacitor WebView)
+      // Step 1: Probe for mic permission — triggers the Android runtime
+      // permission dialog if it hasn't been granted yet.  The stream is
+      // released immediately so it doesn't lock the microphone for the
+      // real recording below (this was the root cause of the pre-PR#18 bug).
+      try {
+        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+        probe.getTracks().forEach(t => t.stop());
+        console.log('[AndroidProvider] Mic permission confirmed');
+      } catch (permErr: any) {
+        console.error('[AndroidProvider] Mic permission denied:', permErr);
+        throw new Error(
+          'Microphone permission denied. Please enable microphone access in app settings.'
+        );
+      }
+
+      // Step 2: Get the actual recording stream with preferred constraints
       console.log('[AndroidProvider] Requesting media stream...');
       let stream: MediaStream;
       const preferredDeviceId = _preferredAudioDeviceId;
@@ -145,13 +163,14 @@ export class AndroidProvider implements ISensorProvider {
       }
 
       if (!selectedMimeType) {
-        console.warn('[AndroidProvider] No supported MIME type found, using default');
+        console.warn('[AndroidProvider] No supported MIME type found, using browser default');
       }
 
-      this.audioRecording = new MediaRecorder(stream, {
-        mimeType: selectedMimeType,
-        audioBitsPerSecond: 128000,
-      });
+      const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 128000 };
+      if (selectedMimeType) {
+        recorderOptions.mimeType = selectedMimeType;
+      }
+      this.audioRecording = new MediaRecorder(stream, recorderOptions);
       this.audioChunks = [];
 
       this.audioRecording.ondataavailable = (event) => {

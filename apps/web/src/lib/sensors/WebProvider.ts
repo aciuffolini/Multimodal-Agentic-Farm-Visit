@@ -150,10 +150,11 @@ export class WebProvider implements ISensorProvider {
         }
       }
 
-      this.audioRecording = new MediaRecorder(stream, {
-        mimeType: selectedMimeType,
-        audioBitsPerSecond: 128000,
-      });
+      const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 128000 };
+      if (selectedMimeType) {
+        recorderOptions.mimeType = selectedMimeType;
+      }
+      this.audioRecording = new MediaRecorder(stream, recorderOptions);
       this.audioChunks = [];
 
       this.audioRecording.ondataavailable = (event) => {
