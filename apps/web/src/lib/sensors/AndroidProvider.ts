@@ -118,14 +118,25 @@ export class AndroidProvider implements ISensorProvider {
     };
   }
 
+  private async acquireStream(): Promise<MediaStream> {
+    // Use bare { audio: true } on Android WebView.  Advanced constraints
+    // (echoCancellation, noiseSuppression, etc.) can trigger
+    // OverconstrainedError or, worse, partially open the audio HAL and
+    // leave it busy.  Chrome's built-in processing is good enough.
+    const constraints: MediaStreamConstraints = _preferredAudioDeviceId
+      ? { audio: { deviceId: { exact: _preferredAudioDeviceId } } }
+      : { audio: true };
+
+    return navigator.mediaDevices.getUserMedia(constraints);
+  }
+
   async startRecording(): Promise<void> {
     console.log('[AndroidProvider] Starting recording...');
 
     // Force-release any previous stream/recorder so the Android audio HAL
-    // is free.  On Android WebView the hardware doesn't release instantly,
-    // so we also yield briefly after stopping tracks.
+    // is free.  Android WebView needs time to fully release the hardware.
     this.releaseAudioStream();
-    await new Promise(r => setTimeout(r, 120));
+    await new Promise(r => setTimeout(r, 300));
 
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error('getUserMedia unavailable in this Android WebView. Update Android System WebView/Chrome and ensure app uses HTTPS origin.');
@@ -136,57 +147,47 @@ export class AndroidProvider implements ISensorProvider {
 
     try {
       console.log('[AndroidProvider] Requesting media stream...');
+
       let stream: MediaStream;
-      const preferredDeviceId = _preferredAudioDeviceId;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
-          }
-        });
-      } catch {
-        console.warn('[AndroidProvider] Advanced constraints failed, falling back to { audio: true }');
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await this.acquireStream();
+      } catch (firstErr: any) {
+        const firstMsg = firstErr?.message || '';
+        const isHardwareBusy = /NotReadable|device busy|Could not start|audio source/i.test(firstMsg);
+        if (!isHardwareBusy) throw firstErr;
+
+        // Hardware contention: wait for the HAL to fully release, then retry once.
+        console.warn('[AndroidProvider] Audio source busy, waiting 600ms and retrying...');
+        this.releaseAudioStream();
+        await new Promise(r => setTimeout(r, 600));
+        stream = await this.acquireStream();
       }
 
       this.audioStream = stream;
-      console.log('[AndroidProvider] Media stream obtained');
+      console.log('[AndroidProvider] Media stream obtained, tracks:', stream.getAudioTracks().length);
 
-      // Pick a supported MIME type
-      const mimeTypes = [
-        'audio/webm;codecs=opus', 'audio/webm',
-        'audio/ogg;codecs=opus', 'audio/mp4', 'audio/wav',
-      ];
-      let selectedMimeType = '';
+      // Build MediaRecorder with progressively simpler options
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      let selectedMime = '';
       for (const mt of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mt)) { selectedMimeType = mt; break; }
+        if (MediaRecorder.isTypeSupported(mt)) { selectedMime = mt; break; }
       }
 
-      // Progressive MediaRecorder constructor fallback
-      const attempts: Array<MediaRecorderOptions | undefined> = [];
-      if (selectedMimeType) {
-        attempts.push({ mimeType: selectedMimeType, audioBitsPerSecond: 128000 });
-        attempts.push({ mimeType: selectedMimeType });
-      }
-      attempts.push({ audioBitsPerSecond: 128000 });
-      attempts.push(undefined);
+      const ctorAttempts: Array<MediaRecorderOptions | undefined> = [];
+      if (selectedMime) ctorAttempts.push({ mimeType: selectedMime });
+      ctorAttempts.push(undefined);
 
       let recorder: MediaRecorder | null = null;
-      let lastErr: any = null;
-      for (const opts of attempts) {
+      let ctorErr: any = null;
+      for (const opts of ctorAttempts) {
         try {
           recorder = opts ? new MediaRecorder(stream, opts) : new MediaRecorder(stream);
           break;
-        } catch (e) {
-          lastErr = e;
-        }
+        } catch (e) { ctorErr = e; }
       }
       if (!recorder) {
         this.releaseAudioStream();
-        throw lastErr || new Error('Unable to initialize MediaRecorder');
+        throw ctorErr || new Error('Unable to initialize MediaRecorder');
       }
 
       this.audioRecording = recorder;
@@ -199,20 +200,19 @@ export class AndroidProvider implements ISensorProvider {
         console.error('[AndroidProvider] MediaRecorder error:', e.error);
       };
 
-      try { recorder.start(1000); } catch {
-        console.warn('[AndroidProvider] start(1000) failed, retrying without timeslice');
-        recorder.start();
-      }
+      // Use start() without timeslice — timeslice causes failures on some
+      // Android WebViews.  We call requestData() before stop to flush.
+      recorder.start();
       console.log('[AndroidProvider] Recording started successfully');
     } catch (err: any) {
       this.releaseAudioStream();
       console.error('[AndroidProvider] Start recording error:', err);
       const msg = err?.message || 'Unknown error';
-      if (msg.includes('NotAllowed') || msg.includes('Permission') || msg.includes('permission')) {
+      if (/NotAllowed|Permission|permission/i.test(msg)) {
         throw new Error('Microphone permission denied. Go to Android Settings → Apps → Farm Visit → Permissions and enable Microphone.');
       }
-      if (msg.includes('NotReadable') || msg.includes('device busy') || msg.includes('Could not start') || msg.includes('audio source')) {
-        throw new Error('Microphone hardware is busy. Wait a moment and try again, or close other recording apps.');
+      if (/NotReadable|device busy|Could not start|audio source/i.test(msg)) {
+        throw new Error('Microphone hardware is busy. Please wait a few seconds and try again.');
       }
       throw new Error(`Failed to start recording: ${msg}`);
     }
