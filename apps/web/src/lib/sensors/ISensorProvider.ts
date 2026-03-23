@@ -3,6 +3,8 @@
  * Defines the contract for all sensor providers (Android, Web, Ray-Ban)
  */
 
+export type SensorSource = 'phone' | 'glasses';
+
 export interface GPSLocation {
   lat: number;
   lon: number;

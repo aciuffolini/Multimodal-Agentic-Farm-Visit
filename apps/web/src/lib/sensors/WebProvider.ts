@@ -111,19 +111,21 @@ export class WebProvider implements ISensorProvider {
 
     try {
       let stream: MediaStream;
+      const { SensorManager } = await import('./SensorManager');
+      const preferredDeviceId = SensorManager.getInstance().preferredAudioDeviceId;
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
+      };
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          }
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       } catch (constraintErr) {
-        console.warn('[WebProvider] Advanced audio constraints not supported, using fallback:', constraintErr);
+        console.warn('[WebProvider] Audio constraints failed, using fallback:', constraintErr);
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
-      console.log('[WebProvider] Media stream obtained');
+      console.log('[WebProvider] Media stream obtained', preferredDeviceId ? `(device: ${preferredDeviceId})` : '(default)');
 
       // Find supported MIME type
       const mimeTypes = [

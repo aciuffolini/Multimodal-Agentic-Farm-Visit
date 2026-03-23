@@ -105,19 +105,21 @@ export class AndroidProvider implements ISensorProvider {
       // Use Web Audio API (works on Android via Capacitor WebView)
       console.log('[AndroidProvider] Requesting media stream...');
       let stream: MediaStream;
+      const { SensorManager } = await import('./SensorManager');
+      const preferredDeviceId = SensorManager.getInstance().preferredAudioDeviceId;
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
+      };
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          }
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       } catch (constraintErr) {
-        console.warn('[AndroidProvider] Advanced audio constraints not supported, using fallback:', constraintErr);
+        console.warn('[AndroidProvider] Audio constraints failed, using fallback:', constraintErr);
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
-      console.log('[AndroidProvider] Media stream obtained');
+      console.log('[AndroidProvider] Media stream obtained', preferredDeviceId ? `(device: ${preferredDeviceId})` : '(default)');
 
       // Find supported MIME type
       const mimeTypes = [

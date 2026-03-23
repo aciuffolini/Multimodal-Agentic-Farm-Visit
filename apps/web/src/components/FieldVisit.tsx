@@ -18,6 +18,9 @@ import { KMZUploader } from './KMZUploader';
 import { KMZData } from '../lib/map/KMZLoader';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
+import { SensorManager } from '../lib/sensors/SensorManager';
+import type { SensorSource } from '../lib/sensors/ISensorProvider';
 
 export function FieldVisit() {
   const { gps, error: gpsError, loading: gpsLoading, getGPS } = useGPS();
@@ -30,6 +33,7 @@ export function FieldVisit() {
   const [records, setRecords] = useState<VisitRecord[]>([]);
   const [note, setNote] = useState('');
   const [kmzData, setKmzData] = useState<KMZData | null>(null);
+  const [sensorSource, setSensorSource] = useState<SensorSource>('phone');
 
   // Initialize swarm agent system
   useEffect(() => {
@@ -191,40 +195,65 @@ export function FieldVisit() {
       return;
     }
 
-    const cols = ['id', 'ts', 'field_id', 'crop', 'issue', 'severity', 'note', 'lat', 'lon', 'acc', 'photo_present', 'synced'];
+    const cols = [
+      'id', 'ts', 'field_id', 'crop', 'issue', 'severity', 'note',
+      'lat', 'lon', 'acc',
+      'photo_present', 'audio_present',
+      'photo_caption', 'audio_transcript', 'audio_summary',
+      'syncStatus',
+    ];
     const escape = (v: any) => v == null ? '' : ('"' + String(v).replace(/"/g, '""') + '"');
-    
+
     const csv = [cols.join(',')]
-      .concat(records.map(r => cols.map(c => escape(r[c as keyof VisitRecord])).join(',')))
+      .concat(records.map(r => cols.map(c => escape((r as any)[c])).join(',')))
       .join('\n');
-    
+
     const fileName = `farm_visits_${new Date().toISOString().split('T')[0]}.csv`;
 
-    try {
-      // Attempt native Capacitor share via filesystem
-      const result = await Filesystem.writeFile({
-        path: fileName,
-        data: csv,
-        directory: Directory.Cache,
-        encoding: Encoding.UTF8,
-      });
-
-      await Share.share({
-        title: 'Farm Visit Records',
-        text: 'Attached are the latest offline field data records (CSV).',
-        url: result.uri,
-        dialogTitle: 'Share/Email Field Records',
-      });
-    } catch (err) {
-      console.warn('Native share failed or browser environment, falling back to download:', err);
-      // Fallback for Web browser
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(a.href);
+    if (Capacitor.isNativePlatform()) {
+      // Android: write to cache and use native share sheet (email, WhatsApp, etc.)
+      try {
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: csv,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
+        await Share.share({
+          title: 'Farm Visit Records',
+          text: 'Attached are the latest offline field data records (CSV).',
+          url: result.uri,
+          dialogTitle: 'Share/Email Field Records',
+        });
+        return;
+      } catch (err) {
+        console.warn('[FieldVisit] Native share failed, falling back:', err);
+      }
     }
+
+    // Web: use Web Share API with File object if supported, otherwise download
+    const blob = new Blob([csv], { type: 'text/csv' });
+
+    if (navigator.share && navigator.canShare?.({ files: [new File([blob], fileName, { type: 'text/csv' })] })) {
+      try {
+        await navigator.share({
+          title: 'Farm Visit Records',
+          text: 'Attached are the latest offline field data records (CSV).',
+          files: [new File([blob], fileName, { type: 'text/csv' })],
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        console.warn('[FieldVisit] Web Share failed, falling back to download:', err);
+      }
+    }
+
+    // Final fallback: browser download
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
   const handleClearDB = async () => {
@@ -406,7 +435,24 @@ export function FieldVisit() {
         
         {/* Right: Capture Controls - Original MVP structure */}
         <div className="rounded-2xl border border-slate-200 p-3 space-y-2 bg-white">
-          <div className="text-sm font-medium">Capture</div>
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">Capture</div>
+            <button
+              onClick={async () => {
+                const next: SensorSource = sensorSource === 'phone' ? 'glasses' : 'phone';
+                await SensorManager.getInstance().setSource(next);
+                setSensorSource(next);
+              }}
+              className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                sensorSource === 'glasses'
+                  ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                  : 'bg-slate-100 border-slate-300 text-slate-600'
+              }`}
+              title={sensorSource === 'phone' ? 'Using phone sensors. Tap to switch to glasses.' : 'Using glasses sensors. Tap to switch to phone.'}
+            >
+              {sensorSource === 'phone' ? '📱 Phone' : '🕶️ Glasses'}
+            </button>
+          </div>
           
           <div className="flex flex-wrap items-center gap-2">
             <button
