@@ -102,44 +102,30 @@ export class AndroidProvider implements ISensorProvider {
   async startRecording(): Promise<void> {
     console.log('[AndroidProvider] Starting recording...');
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('Audio recording is not supported. Please update your WebView or Android System WebView app.');
-    }
-
     if (typeof MediaRecorder === 'undefined') {
       throw new Error('MediaRecorder is not supported in this browser');
     }
 
     try {
-      // Step 1: Probe for mic permission — triggers the Android runtime
-      // permission dialog if it hasn't been granted yet.  The stream is
-      // released immediately so it doesn't lock the microphone for the
-      // real recording below (this was the root cause of the pre-PR#18 bug).
-      try {
-        const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-        probe.getTracks().forEach(t => t.stop());
-        console.log('[AndroidProvider] Mic permission confirmed');
-      } catch (permErr: any) {
-        console.error('[AndroidProvider] Mic permission denied:', permErr);
-        throw new Error(
-          'Microphone permission denied. Please enable microphone access in app settings.'
-        );
-      }
-
-      // Step 2: Get the actual recording stream with preferred constraints
+      // Single getUserMedia call — do NOT probe first.
+      // On Android WebView the audio device doesn't release fast enough
+      // between two consecutive getUserMedia calls, causing the second to
+      // fail with "device busy".  The constraint fallback already handles
+      // the case where advanced constraints aren't supported.
       console.log('[AndroidProvider] Requesting media stream...');
       let stream: MediaStream;
       const preferredDeviceId = _preferredAudioDeviceId;
-      const audioConstraints: MediaTrackConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
-      };
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
+          }
+        });
       } catch (constraintErr) {
-        console.warn('[AndroidProvider] Audio constraints failed, using fallback:', constraintErr);
+        console.warn('[AndroidProvider] Advanced audio constraints not supported, using fallback:', constraintErr);
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       console.log('[AndroidProvider] Media stream obtained', preferredDeviceId ? `(device: ${preferredDeviceId})` : '(default)');
@@ -170,12 +156,12 @@ export class AndroidProvider implements ISensorProvider {
       if (selectedMimeType) {
         recorderOptions.mimeType = selectedMimeType;
       }
+
       this.audioRecording = new MediaRecorder(stream, recorderOptions);
       this.audioChunks = [];
 
       this.audioRecording.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
-          console.log('[AndroidProvider] Data available:', event.data.size, 'bytes');
           this.audioChunks.push(event.data);
         }
       };
@@ -184,20 +170,15 @@ export class AndroidProvider implements ISensorProvider {
         console.error('[AndroidProvider] MediaRecorder error:', event.error);
       };
 
-      this.audioRecording.onstart = () => {
-        console.log('[AndroidProvider] Recording started');
-      };
-
-      this.audioRecording.onstop = () => {
-        console.log('[AndroidProvider] Recording stopped, chunks:', this.audioChunks.length);
-      };
-
-      // Start recording with timeslice to get chunks periodically
       this.audioRecording.start(1000);
       console.log('[AndroidProvider] Recording started successfully');
     } catch (err: any) {
       console.error('[AndroidProvider] Start recording error:', err);
-      throw new Error(`Failed to start recording: ${err.message || 'Unknown error'}`);
+      const msg = err.message || 'Unknown error';
+      if (msg.includes('NotAllowed') || msg.includes('Permission') || msg.includes('permission')) {
+        throw new Error('Microphone permission denied. Go to Android Settings → Apps → Farm Visit → Permissions and enable Microphone.');
+      }
+      throw new Error(`Failed to start recording: ${msg}`);
     }
   }
 
