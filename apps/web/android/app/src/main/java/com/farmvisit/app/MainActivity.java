@@ -1,9 +1,13 @@
 package com.farmvisit.app;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.webkit.PermissionRequest;
+import android.webkit.WebView;
+import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
@@ -18,13 +22,14 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         registerPlugin(GeminiNanoPlugin.class);
         requestCriticalPermissions();
-        configureWebViewPermissionBridge();
     }
 
-    /**
-     * Request RECORD_AUDIO, CAMERA, and LOCATION at app startup so that
-     * WebView getUserMedia() calls succeed without a second permission dance.
-     */
+    @Override
+    public void onStart() {
+        super.onStart();
+        installWebViewPermissionBridge();
+    }
+
     private void requestCriticalPermissions() {
         String[] needed = {
             Manifest.permission.RECORD_AUDIO,
@@ -46,12 +51,30 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+            @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSIONS_REQUEST_CODE) {
+            installWebViewPermissionBridge();
+        }
+    }
+
     /**
-     * Ensure WebView media permission requests are granted when OS permissions are
-     * already approved. Without this bridge, some Android WebView builds deny
-     * navigator.mediaDevices.getUserMedia() even with RECORD_AUDIO granted.
+     * Install a WebChromeClient that auto-grants RESOURCE_AUDIO_CAPTURE and
+     * RESOURCE_VIDEO_CAPTURE when the corresponding Android runtime permission
+     * is already granted.  Retries with a short delay if the Capacitor bridge
+     * is not yet initialised (it is set up asynchronously by BridgeActivity).
      */
-    private void configureWebViewPermissionBridge() {
+    private void installWebViewPermissionBridge() {
+        if (bridge == null || bridge.getWebView() == null) {
+            new Handler(Looper.getMainLooper()).postDelayed(this::tryInstallBridge, 500);
+        } else {
+            tryInstallBridge();
+        }
+    }
+
+    private void tryInstallBridge() {
         if (bridge == null || bridge.getWebView() == null) {
             return;
         }
@@ -73,17 +96,15 @@ public class MainActivity extends BridgeActivity {
                         }
                     }
 
-                    boolean audioGranted = !needsAudio || ContextCompat.checkSelfPermission(
-                        MainActivity.this,
-                        Manifest.permission.RECORD_AUDIO
+                    boolean audioOk = !needsAudio || ContextCompat.checkSelfPermission(
+                        MainActivity.this, Manifest.permission.RECORD_AUDIO
                     ) == PackageManager.PERMISSION_GRANTED;
 
-                    boolean cameraGranted = !needsVideo || ContextCompat.checkSelfPermission(
-                        MainActivity.this,
-                        Manifest.permission.CAMERA
+                    boolean cameraOk = !needsVideo || ContextCompat.checkSelfPermission(
+                        MainActivity.this, Manifest.permission.CAMERA
                     ) == PackageManager.PERMISSION_GRANTED;
 
-                    if (audioGranted && cameraGranted) {
+                    if (audioOk && cameraOk) {
                         request.grant(resources);
                     } else {
                         request.deny();
