@@ -102,6 +102,24 @@ export class AndroidProvider implements ISensorProvider {
   async startRecording(): Promise<void> {
     console.log('[AndroidProvider] Starting recording...');
 
+    // Recover from any stale recorder state left by previous failures.
+    if (this.audioRecording) {
+      try {
+        if (this.audioRecording.stream) {
+          this.audioRecording.stream.getTracks().forEach(track => track.stop());
+        }
+      } catch (cleanupErr) {
+        console.warn('[AndroidProvider] Failed cleaning previous recorder state:', cleanupErr);
+      } finally {
+        this.audioRecording = null;
+        this.audioChunks = [];
+      }
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('getUserMedia unavailable in this Android WebView. Update Android System WebView/Chrome and ensure app uses HTTPS origin.');
+    }
+
     if (typeof MediaRecorder === 'undefined') {
       throw new Error('MediaRecorder is not supported in this browser');
     }
@@ -152,12 +170,35 @@ export class AndroidProvider implements ISensorProvider {
         console.warn('[AndroidProvider] No supported MIME type found, using browser default');
       }
 
-      const recorderOptions: MediaRecorderOptions = { audioBitsPerSecond: 128000 };
+      // Some Android WebViews reject options (mime/audioBitsPerSecond) even when
+      // reporting support. Try progressively simpler constructors.
+      const constructorAttempts: Array<MediaRecorderOptions | undefined> = [];
       if (selectedMimeType) {
-        recorderOptions.mimeType = selectedMimeType;
+        constructorAttempts.push({ mimeType: selectedMimeType, audioBitsPerSecond: 128000 });
+        constructorAttempts.push({ mimeType: selectedMimeType });
+      }
+      constructorAttempts.push({ audioBitsPerSecond: 128000 });
+      constructorAttempts.push(undefined);
+
+      let recorder: MediaRecorder | null = null;
+      let constructorError: any = null;
+      for (const options of constructorAttempts) {
+        try {
+          recorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+          console.log('[AndroidProvider] MediaRecorder initialized with options:', options ?? '(none)');
+          break;
+        } catch (ctorErr) {
+          constructorError = ctorErr;
+          console.warn('[AndroidProvider] MediaRecorder ctor attempt failed:', options ?? '(none)', ctorErr);
+        }
       }
 
-      this.audioRecording = new MediaRecorder(stream, recorderOptions);
+      if (!recorder) {
+        stream.getTracks().forEach(track => track.stop());
+        throw constructorError || new Error('Unable to initialize MediaRecorder');
+      }
+
+      this.audioRecording = recorder;
       this.audioChunks = [];
 
       this.audioRecording.ondataavailable = (event) => {
@@ -170,13 +211,22 @@ export class AndroidProvider implements ISensorProvider {
         console.error('[AndroidProvider] MediaRecorder error:', event.error);
       };
 
-      this.audioRecording.start(1000);
+      // Some devices fail with timeslice; fallback to start() without timeslice.
+      try {
+        this.audioRecording.start(1000);
+      } catch (startErr) {
+        console.warn('[AndroidProvider] start(1000) failed, retrying start() without timeslice:', startErr);
+        this.audioRecording.start();
+      }
       console.log('[AndroidProvider] Recording started successfully');
     } catch (err: any) {
       console.error('[AndroidProvider] Start recording error:', err);
-      const msg = err.message || 'Unknown error';
+      const msg = err?.message || 'Unknown error';
       if (msg.includes('NotAllowed') || msg.includes('Permission') || msg.includes('permission')) {
         throw new Error('Microphone permission denied. Go to Android Settings → Apps → Farm Visit → Permissions and enable Microphone.');
+      }
+      if (msg.includes('NotReadable') || msg.includes('device busy') || msg.includes('Could not start source')) {
+        throw new Error('Microphone is busy or blocked by another app. Close other recording apps and try again.');
       }
       throw new Error(`Failed to start recording: ${msg}`);
     }
