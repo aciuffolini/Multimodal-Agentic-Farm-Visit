@@ -1,11 +1,15 @@
 /**
  * Android Sensor Provider
- * Uses Capacitor plugins for native Android sensor access
+ * Uses Capacitor plugins for native Android sensor access.
+ * Audio recording uses a native VoiceRecorder plugin that bypasses WebView
+ * getUserMedia/MediaRecorder entirely — those APIs are unreliable in Android
+ * WebViews and produce "Could not start audio source" on many devices.
  */
 
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { Geolocation, Position, PermissionStatus as GeoPermissionStatus } from '@capacitor/geolocation';
+import { Geolocation, Position } from '@capacitor/geolocation';
 import { ISensorProvider, GPSLocation, PhotoResult, CameraOptions, PermissionStatus } from './ISensorProvider';
+import VoiceRecorder from '../plugins/VoiceRecorder';
 
 let _preferredAudioDeviceId: string | undefined;
 
@@ -14,29 +18,8 @@ export function setPreferredAudioDeviceAndroid(deviceId: string | undefined) {
 }
 
 export class AndroidProvider implements ISensorProvider {
-  private audioRecording: MediaRecorder | null = null;
-  private audioStream: MediaStream | null = null;
-  private audioChunks: Blob[] = [];
   private currentAudio: HTMLAudioElement | null = null;
   private gpsWatchId: string | null = null;
-
-  private releaseAudioStream(): void {
-    if (this.audioStream) {
-      try {
-        this.audioStream.getTracks().forEach(t => { t.stop(); });
-      } catch (_) { /* best effort */ }
-      this.audioStream = null;
-    }
-    if (this.audioRecording) {
-      try {
-        if (this.audioRecording.state !== 'inactive') {
-          this.audioRecording.stop();
-        }
-      } catch (_) { /* best effort */ }
-      this.audioRecording = null;
-    }
-    this.audioChunks = [];
-  }
 
   async getGPS(): Promise<GPSLocation> {
     const position = await Geolocation.getCurrentPosition({
@@ -88,12 +71,11 @@ export class AndroidProvider implements ISensorProvider {
     const image = await Camera.getPhoto({
       quality: options?.quality || 90,
       allowEditing: options?.allowEditing || false,
-      resultType: CameraResultType.DataUrl, // DataUrl for PWA compatibility
+      resultType: CameraResultType.DataUrl,
       source: options?.source === 'photos' ? CameraSource.Photos : CameraSource.Camera,
       correctOrientation: true,
     });
 
-    // Get image dimensions from loaded image
     let width = 0;
     let height = 0;
     const dataUrl = image.dataUrl;
@@ -118,156 +100,39 @@ export class AndroidProvider implements ISensorProvider {
     };
   }
 
-  private async acquireStream(): Promise<MediaStream> {
-    // Use bare { audio: true } on Android WebView.  Advanced constraints
-    // (echoCancellation, noiseSuppression, etc.) can trigger
-    // OverconstrainedError or, worse, partially open the audio HAL and
-    // leave it busy.  Chrome's built-in processing is good enough.
-    const constraints: MediaStreamConstraints = _preferredAudioDeviceId
-      ? { audio: { deviceId: { exact: _preferredAudioDeviceId } } }
-      : { audio: true };
-
-    return navigator.mediaDevices.getUserMedia(constraints);
-  }
+  // ── Audio recording via native plugin ──────────────────────────────
 
   async startRecording(): Promise<void> {
-    console.log('[AndroidProvider] Starting recording...');
-
-    // Force-release any previous stream/recorder so the Android audio HAL
-    // is free.  Android WebView needs time to fully release the hardware.
-    this.releaseAudioStream();
-    await new Promise(r => setTimeout(r, 300));
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('getUserMedia unavailable in this Android WebView. Update Android System WebView/Chrome and ensure app uses HTTPS origin.');
-    }
-    if (typeof MediaRecorder === 'undefined') {
-      throw new Error('MediaRecorder is not supported in this browser');
-    }
-
+    console.log('[AndroidProvider] Starting native recording...');
     try {
-      console.log('[AndroidProvider] Requesting media stream...');
-
-      let stream: MediaStream;
-      try {
-        stream = await this.acquireStream();
-      } catch (firstErr: any) {
-        const firstMsg = firstErr?.message || '';
-        const isHardwareBusy = /NotReadable|device busy|Could not start|audio source/i.test(firstMsg);
-        if (!isHardwareBusy) throw firstErr;
-
-        // Hardware contention: wait for the HAL to fully release, then retry once.
-        console.warn('[AndroidProvider] Audio source busy, waiting 600ms and retrying...');
-        this.releaseAudioStream();
-        await new Promise(r => setTimeout(r, 600));
-        stream = await this.acquireStream();
-      }
-
-      this.audioStream = stream;
-      console.log('[AndroidProvider] Media stream obtained, tracks:', stream.getAudioTracks().length);
-
-      // Build MediaRecorder with progressively simpler options
-      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
-      let selectedMime = '';
-      for (const mt of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mt)) { selectedMime = mt; break; }
-      }
-
-      const ctorAttempts: Array<MediaRecorderOptions | undefined> = [];
-      if (selectedMime) ctorAttempts.push({ mimeType: selectedMime });
-      ctorAttempts.push(undefined);
-
-      let recorder: MediaRecorder | null = null;
-      let ctorErr: any = null;
-      for (const opts of ctorAttempts) {
-        try {
-          recorder = opts ? new MediaRecorder(stream, opts) : new MediaRecorder(stream);
-          break;
-        } catch (e) { ctorErr = e; }
-      }
-      if (!recorder) {
-        this.releaseAudioStream();
-        throw ctorErr || new Error('Unable to initialize MediaRecorder');
-      }
-
-      this.audioRecording = recorder;
-      this.audioChunks = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data?.size > 0) this.audioChunks.push(e.data);
-      };
-      recorder.onerror = (e: any) => {
-        console.error('[AndroidProvider] MediaRecorder error:', e.error);
-      };
-
-      // Use start() without timeslice — timeslice causes failures on some
-      // Android WebViews.  We call requestData() before stop to flush.
-      recorder.start();
-      console.log('[AndroidProvider] Recording started successfully');
+      await VoiceRecorder.startRecording();
+      console.log('[AndroidProvider] Native recording started');
     } catch (err: any) {
-      this.releaseAudioStream();
-      console.error('[AndroidProvider] Start recording error:', err);
+      console.error('[AndroidProvider] Native startRecording failed:', err);
       const msg = err?.message || 'Unknown error';
-      if (/NotAllowed|Permission|permission/i.test(msg)) {
+      if (/permission/i.test(msg)) {
         throw new Error('Microphone permission denied. Go to Android Settings → Apps → Farm Visit → Permissions and enable Microphone.');
-      }
-      if (/NotReadable|device busy|Could not start|audio source/i.test(msg)) {
-        throw new Error('Microphone hardware is busy. Please wait a few seconds and try again.');
       }
       throw new Error(`Failed to start recording: ${msg}`);
     }
   }
 
   async stopRecording(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const recorder = this.audioRecording;
-      if (!recorder || recorder.state === 'inactive') {
-        this.releaseAudioStream();
-        reject(new Error('No active recording'));
-        return;
-      }
-
-      console.log('[AndroidProvider] Stopping recording...');
-
-      // Capture mimeType before any state change
-      const mimeType = recorder.mimeType || 'audio/webm';
-
-      recorder.onstop = () => {
-        // Release the hardware immediately so next recording can open cleanly
-        this.releaseAudioStream();
-
-        try {
-          if (this.audioChunks.length === 0) {
-            reject(new Error('No audio data recorded'));
-            return;
-          }
-
-          const audioBlob = new Blob(this.audioChunks, { type: mimeType });
-          this.audioChunks = [];
-
-          if (audioBlob.size === 0) {
-            reject(new Error('Recorded audio is empty'));
-            return;
-          }
-
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error('Failed to read audio data'));
-          reader.readAsDataURL(audioBlob);
-        } catch (err) {
-          reject(err);
-        }
-      };
-
-      try { recorder.requestData(); } catch { /* not supported on all engines */ }
-      recorder.stop();
-    });
+    console.log('[AndroidProvider] Stopping native recording...');
+    try {
+      const result = await VoiceRecorder.stopRecording();
+      console.log('[AndroidProvider] Native recording stopped, size:', result.size);
+      return result.dataUrl;
+    } catch (err: any) {
+      console.error('[AndroidProvider] Native stopRecording failed:', err);
+      throw new Error(`Failed to stop recording: ${err?.message || 'Unknown error'}`);
+    }
   }
 
-  async playAudio(url: string): Promise<void> {
-    // Stop any currently playing audio
-    this.stopAudio();
+  // ── Audio playback (uses HTML5 Audio — works fine in WebView) ──────
 
+  async playAudio(url: string): Promise<void> {
+    this.stopAudio();
     this.currentAudio = new Audio(url);
     await this.currentAudio.play();
   }
@@ -279,6 +144,8 @@ export class AndroidProvider implements ISensorProvider {
       this.currentAudio = null;
     }
   }
+
+  // ── Permissions ────────────────────────────────────────────────────
 
   async requestPermissions(): Promise<PermissionStatus> {
     let cameraStatus: 'granted' | 'denied' = 'denied';
@@ -298,11 +165,9 @@ export class AndroidProvider implements ISensorProvider {
       console.warn('Geolocation permission request failed:', e);
     }
 
-    // Do NOT call getUserMedia here just to probe permission status.
-    // On Android WebView, acquiring and releasing the audio device is slow;
-    // a stale stream causes "Could not start audio source" when startRecording
-    // is called shortly after.  The native MainActivity already handles the
-    // RECORD_AUDIO runtime permission request at app startup.
+    // Mic permission is handled natively by MainActivity at startup.
+    // Do NOT call getUserMedia here — it causes "audio source busy" on
+    // Android WebView.
     let micPerm: 'granted' | 'denied' = 'denied';
     try {
       const perm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
@@ -315,7 +180,6 @@ export class AndroidProvider implements ISensorProvider {
   }
 
   async checkPermissions(): Promise<PermissionStatus> {
-    // Camera
     let cameraStatus: 'granted' | 'denied' | 'prompt' = 'prompt';
     try {
       const result = await Camera.checkPermissions();
@@ -325,7 +189,6 @@ export class AndroidProvider implements ISensorProvider {
       console.warn('Camera permission check failed:', e);
     }
     
-    // Geolocation
     let geoStatus: 'granted' | 'denied' | 'prompt' = 'prompt';
     try {
       const geoPerm = await Geolocation.checkPermissions();
@@ -334,7 +197,6 @@ export class AndroidProvider implements ISensorProvider {
       console.warn('Geolocation permission check failed:', e);
     }
     
-    // Check microphone - Android WebView doesn't expose static permission API
     let micPerm: 'granted' | 'denied' | 'prompt' = 'prompt';
     if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
       micPerm = 'prompt';
@@ -342,11 +204,6 @@ export class AndroidProvider implements ISensorProvider {
       micPerm = 'denied';
     }
 
-    return {
-      camera: cameraStatus,
-      microphone: micPerm,
-      geolocation: geoStatus,
-    };
+    return { camera: cameraStatus, microphone: micPerm, geolocation: geoStatus };
   }
 }
-

@@ -21,6 +21,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         registerPlugin(GeminiNanoPlugin.class);
+        registerPlugin(VoiceRecorderPlugin.class);
         requestCriticalPermissions();
     }
 
